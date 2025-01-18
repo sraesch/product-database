@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:latest
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: dbuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: productdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # Mount the init.sql file
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
