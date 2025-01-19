@@ -6,7 +6,9 @@ use log::{error, info};
 use serde::Deserialize;
 use tokio_postgres::{NoTls, Row};
 
-use crate::{DataBackend, Error, ProductID, Result as ProductDBResult, Secret};
+use crate::{
+    DBId, DataBackend, Error, ProductID, ProductRequest, Result as ProductDBResult, Secret,
+};
 
 /// Postgres based implementation of the state backend.
 pub struct PostgresBackend {
@@ -39,10 +41,16 @@ impl PostgresBackend {
         pool_config.port = Some(config.port);
 
         // create the connection pool
+        info!("Creating Postgres connection pool...");
         let pool = match pool_config.create_pool(None, NoTls) {
             Ok(pool) => pool,
-            Err(e) => return Err(Error::DBCreatePoolError(Box::new(e))),
+            Err(e) => {
+                error!("Failed to create Postgres connection pool: {}", e);
+                return Err(Error::DBCreatePoolError(Box::new(e)));
+            }
         };
+
+        info!("Creating Postgres connection pool...DONE");
 
         Ok(Self { pool })
     }
@@ -61,7 +69,7 @@ impl DataBackend for PostgresBackend {
         &self,
         id: ProductID,
         date: DateTime<Local>,
-    ) -> ProductDBResult<u64> {
+    ) -> ProductDBResult<DBId> {
         info!(
             "Report missing product with id: {} with timestamp {}",
             id, date
@@ -81,17 +89,14 @@ impl DataBackend for PostgresBackend {
                 }
             };
 
-        let db_id: i64 = row.get(0);
-        let db_id = db_id as u64;
+        let db_id: DBId = row.get(0);
         info!("Reported missing product with id: {} as {}", id, db_id);
 
         Ok(db_id)
     }
 
-    async fn delete_reported_missing_product(&self, id: u64) -> ProductDBResult<()> {
+    async fn delete_reported_missing_product(&self, id: DBId) -> ProductDBResult<()> {
         info!("Delete reported missing product with id: {}", id);
-
-        let id = id as i64;
 
         let client = self.get_client().await?;
         if let Err(err) = client
@@ -112,21 +117,27 @@ impl DataBackend for PostgresBackend {
 
     async fn request_new_product(
         &self,
-        product_info: crate::ProductInfo,
-        product_photo: Option<Vec<u8>>,
-        date: DateTime<Local>,
-    ) -> ProductDBResult<u64> {
+        requested_product: &ProductRequest,
+    ) -> ProductDBResult<DBId> {
+        let product_info = &requested_product.product_info;
+        let product_photo = requested_product.product_photo.as_deref();
+        let date = &requested_product.date;
+
         info!("Request new product with name: {}", product_info.name);
+
+        let preview_data = product_info.preview.as_ref().map(|p| p.data.as_slice());
+        let preview_content_type = product_info.preview.as_ref().map(|p| &p.content_type);
 
         let client = self.get_client().await?;
         let row = match client
-                .query_1(
-                    "insert into requested_products (
+            .query_1(
+                "insert into requested_products (
             product_id,
             date,
             name,
             producer,
             preview,
+            preview_content_type,
             photo,
             protein_grams,
             fat_grams,
@@ -135,20 +146,23 @@ impl DataBackend for PostgresBackend {
             salt_grams,
             vitaminA_mg,
             vitaminC_mg,
-            vitaminD_Mq,
+            vitaminD_Mg,
             iron_mg,
             calcium_mg,
             magnesium_mg,
             sodium_mg,
-            zinc_mg)
+            zinc_mg
+            )
 
-            values values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-            returning id;", 
-                    &[&product_info.id,
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            returning id;",
+                &[
+                    &product_info.id,
                     &date,
                     &product_info.name,
                     &product_info.producer,
-                    &product_info.preview,
+                    &preview_data,
+                    &preview_content_type,
                     &product_photo,
                     &product_info.nutrients.protein.map(|w| w.gram()),
                     &product_info.nutrients.fat.map(|w| w.gram()),
@@ -162,18 +176,19 @@ impl DataBackend for PostgresBackend {
                     &product_info.nutrients.calcium.map(|w| w.milligram()),
                     &product_info.nutrients.magnesium.map(|w| w.milligram()),
                     &product_info.nutrients.sodium.map(|w| w.milligram()),
-                    &product_info.nutrients.zinc.map(|w| w.milligram())],
-                )
-                .await {
-                    Ok(row) => row,
-                    Err(e) => {
-                        error!("Failed to request new product: {}", e);
-                        return Err(e);
-                    }
-                };
+                    &product_info.nutrients.zinc.map(|w| w.milligram())
+                ],
+            )
+            .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                error!("Failed to request new product: {}", e);
+                return Err(e);
+            }
+        };
 
-        let db_id: i64 = row.get(0);
-        let db_id = db_id as u64;
+        let db_id: DBId = row.get(0);
         info!(
             "Requested new product with name: {} as {}",
             product_info.name, db_id
@@ -182,10 +197,16 @@ impl DataBackend for PostgresBackend {
         Ok(db_id)
     }
 
-    async fn delete_requested_product(&self, id: u64) -> ProductDBResult<()> {
-        error!("Delete requested product with id: {}", id);
+    async fn get_product_request(
+        &self,
+        id: DBId,
+        with_preview: bool,
+    ) -> ProductDBResult<Option<ProductRequest>> {
+        unimplemented!()
+    }
 
-        let id = id as i64;
+    async fn delete_requested_product(&self, id: DBId) -> ProductDBResult<()> {
+        info!("Delete requested product with id: {}", id);
 
         let client = self.get_client().await?;
         if let Err(err) = client

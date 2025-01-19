@@ -9,6 +9,8 @@ thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
+serde_with_macros = "3.12"
+serde_with = { version = "3.12", features = ["base64"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.0", features = ["sync"] }
 tokio-postgres = { version = "0.7", features = [
@@ -17,7 +19,10 @@ tokio-postgres = { version = "0.7", features = [
     "with-chrono-0_4",
 ] }
 deadpool-postgres = "0.14"
+load_image = "3.2"
 
 [dev-dependencies]
 dockertest = "0.5"
 rand = "0.8"
+env_logger = "0.11"
+tempfile = "3.2"
