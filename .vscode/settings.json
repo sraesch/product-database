@@ -1,0 +1,11 @@
+{
+    "editor.formatOnSave": true,
+    "cSpell.words": [
+        "amqprs",
+        "dbname",
+        "deadpool",
+        "dockertest",
+        "serde",
+        "thiserror"
+    ]
+}

@@ -1,0 +1,13 @@
+# The logging level
+log = "Info"
+
+# The address to bind the controller REST API
+address = "0.0.0.0:3030"
+
+# Connection details for Postgres
+[postgres]
+host = "localhost"
+port = 5432
+dbname = "product_db"
+user = "postgres"
+password = "postgres"
