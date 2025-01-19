@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+
+members = ["product-db", "product-db-cli"]
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
