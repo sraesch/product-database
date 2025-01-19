@@ -21,7 +21,7 @@ create table if not exists products (
     sodium_mg real, -- The amount of sodium in the product in milligrams
     zinc real, -- The amount of zinc in the product in milligrams
 
-    PRIMARY KEY(product_id, product_id_type)
+    PRIMARY KEY(product_id)
 );
 
 create table if not exists reported_missing_products (
