@@ -1,19 +1,18 @@
-use std::future::Future;
-
-use chrono::{DateTime, Local};
-use deadpool_postgres::{Client, Config, Pool};
+use chrono::{DateTime, Utc};
 use log::{debug, error, info};
 use serde::Deserialize;
-use tokio_postgres::{NoTls, Row};
+use sqlx::{postgres::PgPoolOptions, Executor, Row};
 
 use crate::{
     DBId, DataBackend, Error, Nutrients, ProductDescription, ProductID, ProductImage,
     ProductRequest, Result as ProductDBResult, Secret,
 };
 
+type Pool = sqlx::PgPool;
+
 /// Postgres based implementation of the state backend.
 pub struct PostgresBackend {
-    /// The postgres connection pool.
+    /// The sql connection pool.
     pool: Pool,
 }
 
@@ -25,6 +24,7 @@ pub struct PostgresConfig {
     pub user: String,
     pub password: Secret,
     pub dbname: String,
+    pub max_connections: u32,
 }
 
 impl PostgresBackend {
@@ -33,21 +33,27 @@ impl PostgresBackend {
     /// # Arguments
     /// * `config` - The configuration for the postgres connection.
     pub async fn new(config: PostgresConfig) -> ProductDBResult<Self> {
-        // create the connection pool configuration
-        let mut pool_config = Config::new();
-        pool_config.user = Some(config.user);
-        pool_config.password = Some(config.password.secret().to_string());
-        pool_config.dbname = Some(config.dbname);
-        pool_config.host = Some(config.host);
-        pool_config.port = Some(config.port);
+        // create connection string
+        let connection_string = format!(
+            "postgresql://{}:{}@{}:{}/{}",
+            config.user,
+            config.password.secret(),
+            config.host,
+            config.port,
+            config.dbname
+        );
 
         // create the connection pool
         info!("Creating Postgres connection pool...");
-        let pool = match pool_config.create_pool(None, NoTls) {
+        let pool = match PgPoolOptions::new()
+            .max_connections(config.max_connections)
+            .connect(&connection_string)
+            .await
+        {
             Ok(pool) => pool,
             Err(e) => {
                 error!("Failed to create Postgres connection pool: {}", e);
-                return Err(Error::DBCreatePoolError(Box::new(e)));
+                return Err(Error::DBError(Box::new(e)));
             }
         };
 
@@ -55,42 +61,29 @@ impl PostgresBackend {
 
         Ok(Self { pool })
     }
-
-    /// Get a client from the connection pool.
-    async fn get_client(&self) -> ProductDBResult<deadpool_postgres::Client> {
-        self.pool
-            .get()
-            .await
-            .map_err(|e| Error::DBPoolError(Box::new(e)))
-    }
 }
 
 impl DataBackend for PostgresBackend {
     async fn report_missing_product(
         &self,
         id: ProductID,
-        date: DateTime<Local>,
+        date: DateTime<Utc>,
     ) -> ProductDBResult<DBId> {
         info!(
             "Report missing product with id: {} with timestamp {}",
             id, date
         );
 
-        let client = self.get_client().await?;
-        let row = match client
-            .query_1(
-            "insert into reported_missing_products (product_id, date) values ($1, $2) returning id;",
-                &[&id, &date],
-            )
-            .await {
+        let db_id: DBId = match sqlx::query_scalar("insert into reported_missing_products (product_id, date) values ($1, $2) returning id;")
+        .bind(&id)
+        .bind(date).fetch_one(&self.pool).await {
                 Ok(row) => row,
                 Err(e) => {
                     error!("Failed to report missing product: {}", e);
-                    return Err(e);
+                    return Err(Error::DBError(Box::new(e)));
                 }
             };
 
-        let db_id: DBId = row.get(0);
         info!("Reported missing product with id: {} as {}", id, db_id);
 
         Ok(db_id)
@@ -99,16 +92,10 @@ impl DataBackend for PostgresBackend {
     async fn delete_reported_missing_product(&self, id: DBId) -> ProductDBResult<()> {
         info!("Delete reported missing product with id: {}", id);
 
-        let client = self.get_client().await?;
-        if let Err(err) = client
-            .execute_statement(
-                "delete from reported_missing_products where id = $1;",
-                &[&id],
-            )
-            .await
-        {
-            error!("Failed to delete reported missing product: {}", err);
-            return Err(err);
+        let query = sqlx::query("delete from reported_missing_products where id = $1;").bind(id);
+        if let Err(e) = self.pool.execute(query).await {
+            error!("Failed to delete reported missing product: {}", e);
+            return Err(Error::DBError(Box::new(e)));
         }
 
         info!("Deleted reported missing product with id: {}", id);
@@ -125,14 +112,27 @@ impl DataBackend for PostgresBackend {
 
         info!("Request new product with name: {}", product_desc.name);
 
-        let client = self.get_client().await?;
-
         // create the product description entry
-        let product_desc_id = self
-            .create_product_description(&client, product_desc)
-            .await?;
+        let product_desc_id = self.create_product_description(product_desc).await?;
 
-        unimplemented!()
+        // insert the product into the requested_products table
+        let q = sqlx::query("insert into requested_products (product_description_id, date) values ($1, $2) returning id;")
+            .bind(product_desc_id)
+            .bind(date);
+
+        let db_id: DBId = match self.pool.fetch_one(q).await {
+            Ok(row) => row.get(0),
+            Err(e) => {
+                error!("Failed to request new product: {}", e);
+                return Err(Error::DBError(Box::new(e)));
+            }
+        };
+
+        info!(
+            "Requested new product with name: {} as {}",
+            product_desc.name, db_id
+        );
+        Ok(db_id)
     }
 
     async fn get_product_request(
@@ -145,55 +145,45 @@ impl DataBackend for PostgresBackend {
             id, with_preview
         );
 
-        let client = self.get_client().await?;
-        let row = match client
-            .query_0_or_1(
-                "select product_id, date, name, producer, protein_grams, fat_grams, carbohydrates_grams, sugar_grams, salt_grams, vitaminA_mg, vitaminC_mg, vitaminD_Mg, iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg from requested_products where id = $1;",
-                &[&id],
-            )
-            .await
-        {
+        let query = sqlx::query("select product_id, date, name, producer, protein_grams, fat_grams, carbohydrates_grams, sugar_grams, salt_grams, vitaminA_mg, vitaminC_mg, vitaminD_Mg, iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg from requested_products where id = $1;").bind(&id);
+        let row = match self.pool.fetch_optional(query).await {
             Ok(row) => row,
             Err(e) => {
                 error!("Failed to get product request: {}", e);
-                return Err(e);
+                return Err(Error::DBError(Box::new(e)));
             }
         };
 
         if let Some(row) = row {
-            let product_id: ProductID = row.get(0);
-            let date: DateTime<Local> = row.get(1);
-            let name: String = row.get(2);
-            let producer: String = row.get(3);
-            let protein_grams: Option<f64> = row.get(4);
-            let fat_grams: Option<f64> = row.get(5);
-            let carbohydrates_grams: Option<f64> = row.get(6);
-            let sugar_grams: Option<f64> = row.get(7);
-            let salt_grams: Option<f64> = row.get(8);
-            let vitaminA_mg: Option<f64> = row.get(9);
-            let vitaminC_mg: Option<f64> = row.get(10);
-            let vitaminD_mg: Option<f64> = row.get(11);
-            let iron_mg: Option<f64> = row.get(12);
-            let calcium_mg: Option<f64> = row.get(13);
-            let magnesium_mg: Option<f64> = row.get(14);
-            let sodium_mg: Option<f64> = row.get(15);
-            let zinc_mg: Option<f64> = row.get(16);
+            let product_id = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let date: DateTime<Utc> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+            let name: String = row.try_get(2).map_err(|e| Error::DBError(Box::new(e)))?;
+            let producer: String = row.try_get(3).map_err(|e| Error::DBError(Box::new(e)))?;
+            let protein_grams: Option<f64> =
+                row.try_get(4).map_err(|e| Error::DBError(Box::new(e)))?;
+            let fat_grams: Option<f64> = row.try_get(5).map_err(|e| Error::DBError(Box::new(e)))?;
+            let carbohydrates_grams: Option<f64> =
+                row.try_get(6).map_err(|e| Error::DBError(Box::new(e)))?;
+            let sugar_grams: Option<f64> =
+                row.try_get(7).map_err(|e| Error::DBError(Box::new(e)))?;
+            let salt_grams: Option<f64> =
+                row.try_get(8).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitaminA_mg: Option<f64> =
+                row.try_get(9).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitaminC_mg: Option<f64> =
+                row.try_get(10).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitaminD_mg: Option<f64> =
+                row.try_get(11).map_err(|e| Error::DBError(Box::new(e)))?;
+            let iron_mg: Option<f64> = row.try_get(12).map_err(|e| Error::DBError(Box::new(e)))?;
+            let calcium_mg: Option<f64> =
+                row.try_get(13).map_err(|e| Error::DBError(Box::new(e)))?;
+            let magnesium_mg: Option<f64> =
+                row.try_get(14).map_err(|e| Error::DBError(Box::new(e)))?;
+            let sodium_mg: Option<f64> =
+                row.try_get(15).map_err(|e| Error::DBError(Box::new(e)))?;
+            let zinc_mg: Option<f64> = row.try_get(16).map_err(|e| Error::DBError(Box::new(e)))?;
 
             unimplemented!()
-
-            // let product_info = ProductInfo {
-            //     id: product_id,
-            //     name,
-            //     producer: Some(producer),
-            //     preview: None,
-            //     nutrients,
-            // }
-
-            // Ok(Some(ProductRequest {
-            //     product_info,
-            //     product_photo: None,
-            //     date,
-            // }))
         } else {
             Ok(None)
         }
@@ -202,13 +192,11 @@ impl DataBackend for PostgresBackend {
     async fn delete_requested_product(&self, id: DBId) -> ProductDBResult<()> {
         info!("Delete requested product with id: {}", id);
 
-        let client = self.get_client().await?;
-        if let Err(err) = client
-            .execute_statement("delete from requested_products where id = $1;", &[&id])
-            .await
-        {
+        let q = sqlx::query("delete from requested_products where id = $1;").bind(id);
+
+        if let Err(err) = self.pool.execute(q).await {
             error!("Failed to delete requested product: {}", err);
-            return Err(err);
+            return Err(Error::DBError(Box::new(err)));
         }
 
         info!("Deleted requested product with id: {}", id);
@@ -221,56 +209,48 @@ impl PostgresBackend {
     /// Create a new entry for the nutrients in the database.
     ///
     /// # Arguments
-    /// * `client` - The postgres client to use.
     /// * `nutrients` - The nutrients to create an entry for.
-    async fn create_nutrients_entry(
-        &self,
-        client: &Client,
-        nutrients: &Nutrients,
-    ) -> ProductDBResult<DBId> {
+    async fn create_nutrients_entry(&self, nutrients: &Nutrients) -> ProductDBResult<DBId> {
         debug!("Create new entry for nutrients: {:?}", nutrients);
 
-        let row = match client
-            .query_1(
-                "insert into nutrients (
-                kcal,
-                protein_grams,
-                fat_grams,
-                carbohydrates_grams,
-                sugar_grams,
-                salt_grams,
-                vitaminA_mg,
-                vitaminC_mg,
-                vitaminD_Mg,
-                iron_mg,
-                calcium_mg,
-                magnesium_mg,
-                sodium_mg,
-                zinc_mg
-            ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id;",
-                &[
-                    &nutrients.kcal,
-                    &nutrients.protein.map(|w| w.gram()),
-                    &nutrients.fat.map(|w| w.gram()),
-                    &nutrients.carbohydrates.map(|w| w.gram()),
-                    &nutrients.sugar.map(|w| w.gram()),
-                    &nutrients.salt.map(|w| w.gram()),
-                    &nutrients.vitamin_a.map(|w| w.milligram()),
-                    &nutrients.vitamin_c.map(|w| w.milligram()),
-                    &nutrients.vitamin_d.map(|w| w.microgram()),
-                    &nutrients.iron.map(|w| w.milligram()),
-                    &nutrients.calcium.map(|w| w.milligram()),
-                    &nutrients.magnesium.map(|w| w.milligram()),
-                    &nutrients.sodium.map(|w| w.milligram()),
-                    &nutrients.zinc.map(|w| w.milligram()),
-                ],
-            )
-            .await
-        {
+        let q = sqlx::query(
+            "insert into nutrients (
+            kcal,
+            protein_grams,
+            fat_grams,
+            carbohydrates_grams,
+            sugar_grams,
+            salt_grams,
+            vitaminA_mg,
+            vitaminC_mg,
+            vitaminD_Mg,
+            iron_mg,
+            calcium_mg,
+            magnesium_mg,
+            sodium_mg,
+            zinc_mg
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id;",
+        )
+        .bind(&nutrients.kcal)
+        .bind(nutrients.protein.map(|w| w.gram()))
+        .bind(nutrients.fat.map(|w| w.gram()))
+        .bind(nutrients.carbohydrates.map(|w| w.gram()))
+        .bind(nutrients.sugar.map(|w| w.gram()))
+        .bind(nutrients.salt.map(|w| w.gram()))
+        .bind(nutrients.vitamin_a.map(|w| w.milligram()))
+        .bind(nutrients.vitamin_c.map(|w| w.milligram()))
+        .bind(nutrients.vitamin_d.map(|w| w.microgram()))
+        .bind(nutrients.iron.map(|w| w.milligram()))
+        .bind(nutrients.calcium.map(|w| w.milligram()))
+        .bind(nutrients.magnesium.map(|w| w.milligram()))
+        .bind(nutrients.sodium.map(|w| w.milligram()))
+        .bind(nutrients.zinc.map(|w| w.milligram()));
+
+        let row = match self.pool.fetch_one(q).await {
             Ok(row) => row,
             Err(e) => {
                 error!("Failed to create new entry for nutrients: {}", e);
-                return Err(e);
+                return Err(Error::DBError(Box::new(e)));
             }
         };
 
@@ -284,11 +264,9 @@ impl PostgresBackend {
     /// If the given image is None, no entry will be created and None will be returned.
     ///
     /// # Arguments
-    /// * `client` - The postgres client to use.
     /// * `image` - The product image to store.
     async fn create_image_entry(
         &self,
-        client: &Client,
         image: &Option<ProductImage>,
     ) -> ProductDBResult<Option<DBId>> {
         // check if an image is available and if not return None
@@ -305,17 +283,17 @@ impl PostgresBackend {
             image.content_type
         );
 
-        let row = match client
-            .query_1(
-                "insert into product_image (data, content_type) values ($1, $2) returning id;",
-                &[&image.data, &image.content_type],
-            )
-            .await
-        {
+        let q = sqlx::query(
+            "insert into product_image (data, content_type) values ($1, $2) returning id;",
+        )
+        .bind(&image.data)
+        .bind(&image.content_type);
+
+        let row = match self.pool.fetch_one(q).await {
             Ok(row) => row,
             Err(e) => {
                 error!("Failed creating entry for image: {}", e);
-                return Err(e);
+                return Err(Error::DBError(Box::new(e)));
             }
         };
 
@@ -328,21 +306,16 @@ impl PostgresBackend {
     /// Create a new entry for the description of a product in the database.
     ///
     /// # Arguments
-    /// * `client` - The postgres client to use.
     /// * `desc` - The product description to store.
-    async fn create_product_description(
-        &self,
-        client: &Client,
-        desc: &ProductDescription,
-    ) -> ProductDBResult<DBId> {
+    async fn create_product_description(&self, desc: &ProductDescription) -> ProductDBResult<DBId> {
         debug!(
             "Create new product description: id={}, name={}",
             desc.id, desc.name,
         );
 
-        let nutrients = self.create_nutrients_entry(client, &desc.nutrients);
-        let preview = self.create_image_entry(client, &desc.preview);
-        let full_image = self.create_image_entry(client, &desc.full_image);
+        let nutrients = self.create_nutrients_entry(&desc.nutrients);
+        let preview = self.create_image_entry(&desc.preview);
+        let full_image = self.create_image_entry(&desc.full_image);
 
         // waiting for the elements nutrients, preview, and full_image to be created
         let nutrients = match nutrients.await {
@@ -370,41 +343,37 @@ impl PostgresBackend {
         };
 
         // create the product description entry
-        let quantity_type = desc.quantity_type.to_string();
-        let row = match client
-            .query_1(
-                "insert into product_description (
-                        product_id,
-                        name,
-                        producer,
-                        quantity_type,
-                        portion,
-                        volume_weight_ratio,
-                        preview,
-                        photo,
-                        nutrients
-                ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id;",
-                &[
-                    &desc.id,
-                    &desc.name,
-                    &desc.producer,
-                    &quantity_type,
-                    &desc.portion,
-                    &desc.volume_weight_ratio,
-                    &preview,
-                    &full_image,
-                    &nutrients,
-                ],
-            )
-            .await
-        {
+        let q = sqlx::query(
+            "insert into product_description (
+            product_id,
+            name,
+            producer,
+            quantity_type,
+            portion,
+            volume_weight_ratio,
+            preview,
+            photo,
+            nutrients
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id;",
+        )
+        .bind(&desc.id)
+        .bind(&desc.name)
+        .bind(&desc.producer)
+        .bind(&desc.quantity_type)
+        .bind(desc.portion)
+        .bind(desc.volume_weight_ratio)
+        .bind(preview)
+        .bind(full_image)
+        .bind(nutrients);
+
+        let row = match self.pool.fetch_one(q).await {
             Ok(row) => row,
             Err(e) => {
                 error!(
                     "Create new product description: id={}, name={}, FAILED",
                     desc.id, desc.name
                 );
-                return Err(e);
+                return Err(Error::DBError(Box::new(e)));
             }
         };
 
@@ -415,131 +384,5 @@ impl PostgresBackend {
         );
 
         Ok(db_id)
-    }
-}
-
-trait SQLClientFunctionalities {
-    /// Executes a SQL statement that does not return a result.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL query to execute.
-    /// * `params` - The parameters to pass to the query.
-    fn execute_statement(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> impl Future<Output = ProductDBResult<u64>> + Send;
-
-    /// Queries 0 or 1 row from the database and returns an error if there are more than 1 rows.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    fn query_0_or_1(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> impl Future<Output = ProductDBResult<Option<Row>>> + Send;
-
-    /// Queries 1 row from the database and returns an error if there is less or more rows.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    fn query_1(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> impl Future<Output = ProductDBResult<Row>> + Send;
-
-    /// Queries rows from the database.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    fn query_n(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> impl Future<Output = ProductDBResult<Vec<Row>>> + Send;
-}
-
-impl SQLClientFunctionalities for deadpool_postgres::Client {
-    /// Executes a SQL statement that does not return a result.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL query to execute.
-    /// * `params` - The parameters to pass to the query.
-    async fn execute_statement(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> ProductDBResult<u64> {
-        let stmt = self
-            .prepare(query)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))?;
-        self.execute(&stmt, params)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))
-    }
-
-    /// Queries 0 or 1 row from the database and returns an error if there are more than 1 rows.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    async fn query_0_or_1(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> ProductDBResult<Option<Row>> {
-        let stmt = self
-            .prepare(query)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))?;
-        self.query_opt(&stmt, params)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))
-    }
-
-    /// Queries 1 row from the database and returns an error if there is less or more rows.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    async fn query_1(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> ProductDBResult<Row> {
-        let stmt = self
-            .prepare(query)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))?;
-        self.query_one(&stmt, params)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))
-    }
-
-    /// Queries rows from the database.
-    ///
-    /// # Arguments
-    /// * `query` - The SQL select query to execute.
-    /// * `params` - The parameters to pass to the query.
-    async fn query_n(
-        &self,
-        query: &str,
-        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    ) -> ProductDBResult<Vec<Row>> {
-        let stmt = self
-            .prepare(query)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))?;
-
-        // execute the query
-        self.query(&stmt, params)
-            .await
-            .map_err(|e| Error::DBError(Box::new(e)))
     }
 }

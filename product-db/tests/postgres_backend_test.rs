@@ -1,6 +1,6 @@
 use std::{env::temp_dir, str::FromStr};
 
-use chrono::Local;
+use chrono::Utc;
 use dockertest::{
     DockerTest, Image, LogAction, LogOptions, LogPolicy, LogSource, TestBodySpecification,
 };
@@ -34,11 +34,11 @@ fn load_products() -> Vec<ProductDescription> {
 async fn backend_tests<B: DataBackend>(backend: B) {
     // report a missing product twice
     let id1 = backend
-        .report_missing_product("missing-product".to_string(), Local::now())
+        .report_missing_product("missing-product".to_string(), Utc::now())
         .await
         .unwrap();
     let id2 = backend
-        .report_missing_product("missing-product".to_string(), Local::now())
+        .report_missing_product("missing-product".to_string(), Utc::now())
         .await
         .unwrap();
     assert_ne!(id1, id2, "The ids should be different");
@@ -57,7 +57,7 @@ async fn backend_tests<B: DataBackend>(backend: B) {
     for product_desc in products.iter() {
         let product_request = ProductRequest {
             product_description: product_desc.clone(),
-            date: Local::now(),
+            date: Utc::now(),
         };
 
         let id = backend.request_new_product(&product_request).await.unwrap();
@@ -123,6 +123,7 @@ async fn test_postgres_backend() {
             dbname: "postgres".to_string(),
             user: "postgres".to_string(),
             password: Secret::from_str("password").unwrap(),
+            max_connections: 5,
         };
 
         info!("Creating PostgresBackend instance...");

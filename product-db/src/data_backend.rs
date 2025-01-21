@@ -1,9 +1,8 @@
 use std::future::Future;
 
-use chrono::{DateTime, Local};
-use serde_yaml::with;
+use chrono::{DateTime, Utc};
 
-use crate::{ProductID, ProductInfo, ProductRequest, Result};
+use crate::{ProductID, ProductRequest, Result};
 
 pub type DBId = i32;
 
@@ -16,7 +15,7 @@ pub trait DataBackend: Send + Sync {
     fn report_missing_product(
         &self,
         id: ProductID,
-        date: DateTime<Local>,
+        date: DateTime<Utc>,
     ) -> impl Future<Output = Result<DBId>> + Send;
 
     /// Deletes the reported missing product from the database.
