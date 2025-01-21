@@ -7,7 +7,7 @@ mod secret;
 use std::fmt::Display;
 
 use ::serde::{Deserialize, Serialize};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
 use serde_with::{base64::Base64, serde_as};
 
 pub use data_backend::*;
@@ -90,7 +90,7 @@ pub struct ProductRequest {
     pub product_description: ProductDescription,
 
     /// The date when the product has been requested to be added.
-    pub date: DateTime<Local>,
+    pub date: DateTime<Utc>,
 }
 
 /// The nutrients of a single product expressed for a reference quantity of 100g.
@@ -206,7 +206,8 @@ impl QuantityInner {
 }
 
 /// The quantity in which the product details are expressed
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, sqlx::Type, Clone, Serialize, Deserialize)]
+#[sqlx(type_name = "QuantityType", rename_all = "lowercase")]
 pub enum QuantityType {
     #[serde(rename = "weight")]
     Weight,
