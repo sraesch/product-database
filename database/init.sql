@@ -62,7 +62,7 @@ create table if not exists product_description (
 
     preview int,  -- Reference onto a preview image
     photo int, -- Reference onto a full image
-    nutrients int, -- Reference onto the nutrients of the product
+    nutrients int not null, -- Reference onto the nutrients of the product
 
     FOREIGN KEY (preview) REFERENCES product_image(id) ON DELETE CASCADE,
     FOREIGN KEY (photo) REFERENCES product_image(id) ON DELETE CASCADE,
@@ -85,3 +85,14 @@ create table if not exists requested_products(
     date timestamp with time zone  not null, -- The date when the product was missing
     FOREIGN KEY (product_description_id) REFERENCES product_description(id) ON DELETE CASCADE
 );
+
+-- create a new product request
+create view requested_products_full as
+       select r.id, r.date,
+              p.name, p.producer, p.quantity_type, p.portion, p.volume_weight_ratio, p.preview,
+              p.photo, n.kcal,
+              n.protein_grams, n.fat_grams, n.carbohydrates_grams, n.sugar_grams, n.salt_grams,
+              n.vitaminA_mg, n.vitaminC_mg, n.vitaminD_Mg, n.iron_mg, n.calcium_mg, n.magnesium_mg,
+              n.sodium_mg, n.zinc_mg
+        from requested_products r, product_description p, nutrients n
+        where r.id = 1 and p.id = r.product_description_id and n.id = p.nutrients;
