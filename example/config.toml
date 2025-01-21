@@ -11,3 +11,4 @@ port = 5432
 dbname = "product_db"
 user = "postgres"
 password = "postgres"
+max_connections = 5
