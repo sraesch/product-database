@@ -8,7 +8,7 @@ create table if not exists product_image (
 );
 
 -- The table stores the nutrition information of the products
--- All values are in grams or milligrams for the reference quantity of 100g
+-- All values are in grams relative to the reference quantity of 100g
 create table if not exists nutrients (
     id  SERIAL PRIMARY KEY, -- The id of the nutrients entry
 
@@ -45,6 +45,7 @@ create table if not exists product_description (
     id SERIAL PRIMARY KEY, -- The id of the product info entry
     product_id varchar(64) not null, -- The id of the product
     name varchar(64) not null, -- The name of the product
+    producer varchar(64), -- The producer of the product
 
     -- The quantity type is either weight or volume.
     -- Weight in grams is used for products like flour, sugar, etc.
@@ -58,8 +59,6 @@ create table if not exists product_description (
     -- The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
     -- Is only defined if the quantity type is volume
     volume_weight_ratio real,
-
-    producer varchar(64), -- The producer of the product
 
     preview int,  -- Reference onto a preview image
     photo int, -- Reference onto a full image

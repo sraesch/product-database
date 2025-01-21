@@ -36,6 +36,7 @@ pub trait DataBackend: Send + Sync {
 
     /// Retrieves the details about the product request with the given id.
     /// Returns `None` if the product request does not exist.
+    /// Note: The photo of the product is not included in the response by default.
     ///
     /// # Arguments
     /// - `id` - The internal id of the requested product

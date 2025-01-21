@@ -6,7 +6,7 @@ use dockertest::{
 };
 use log::info;
 use product_db::{
-    DataBackend, PostgresBackend, PostgresConfig, ProductInfo, ProductRequest, Secret,
+    DataBackend, PostgresBackend, PostgresConfig, ProductDescription, ProductRequest, Secret,
 };
 
 /// Initialize the logger for the tests.
@@ -22,7 +22,7 @@ fn init_logger() {
 }
 
 /// Loads the product data from the test_data/products.json file.
-fn load_products() -> Vec<ProductInfo> {
+fn load_products() -> Vec<ProductDescription> {
     let product_data = include_str!("../../test_data/products.json");
     serde_json::from_str(product_data).unwrap()
 }
@@ -54,11 +54,10 @@ async fn backend_tests<B: DataBackend>(backend: B) {
     let products = load_products();
 
     // request the products in the list
-    for product_info in products.iter() {
+    for product_desc in products.iter() {
         let product_request = ProductRequest {
-            product_info: product_info.clone(),
+            product_description: product_desc.clone(),
             date: Local::now(),
-            product_photo: None,
         };
 
         let id = backend.request_new_product(&product_request).await.unwrap();

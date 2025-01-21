@@ -4,6 +4,8 @@ mod options;
 mod postgres;
 mod secret;
 
+use std::fmt::Display;
+
 use ::serde::{Deserialize, Serialize};
 use chrono::{DateTime, Local};
 use serde_with::{base64::Base64, serde_as};
@@ -31,16 +33,47 @@ pub struct ProductInfo {
     pub producer: Option<String>,
 
     /// The preview image of the product.
-    pub preview: Option<ProductPreview>,
+    pub preview: Option<ProductImage>,
 
     /// The nutrients of the product.
     pub nutrients: Nutrients,
 }
 
-/// The preview image of the product.
+/// The description of a product.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductDescription {
+    pub id: ProductID,
+
+    pub name: String,
+    pub producer: Option<String>,
+
+    /// The quantity type is either weight or volume.
+    /// Weight in grams is used for products like flour, sugar, etc.
+    /// Volume in ml is used for products like milk, water, etc.
+    pub quantity_type: QuantityType,
+
+    /// The amount for one portion of the product in grams or ml
+    /// depending on the quantity type
+    pub portion: Option<f32>,
+
+    /// The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
+    /// Is only defined if the quantity type is volume
+    pub volume_weight_ratio: Option<f32>,
+
+    /// A preview image of the product.
+    pub preview: Option<ProductImage>,
+
+    /// The full image of the product.
+    pub full_image: Option<ProductImage>,
+
+    /// The nutrients of the product.
+    pub nutrients: Nutrients,
+}
+
+/// A image of the product. Can be a preview or full image of the product.
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductPreview {
+pub struct ProductImage {
     #[serde(rename = "contentType")]
     /// The content type of the preview image.
     pub content_type: String,
@@ -54,23 +87,21 @@ pub struct ProductPreview {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductRequest {
     /// The information about the product.
-    pub product_info: ProductInfo,
-
-    /// The photo of the product, if available.
-    pub product_photo: Option<Vec<u8>>,
+    pub product_description: ProductDescription,
 
     /// The date when the product has been requested to be added.
     pub date: DateTime<Local>,
 }
 
-/// The nutrients of a single product
+/// The nutrients of a single product expressed for a reference quantity of 100g.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nutrients {
     pub kcal: f32,
-    pub quantity: Quantity,
+
     pub protein: Option<Weight>,
     pub fat: Option<Weight>,
     pub carbohydrates: Option<Weight>,
+
     pub sugar: Option<Weight>,
     pub salt: Option<Weight>,
 
@@ -176,12 +207,21 @@ impl QuantityInner {
 
 /// The quantity in which the product details are expressed
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Quantity {
+pub enum QuantityType {
     #[serde(rename = "weight")]
-    Weight(QuantityInner),
+    Weight,
 
     #[serde(rename = "volume")]
-    Volume(QuantityInner),
+    Volume,
+}
+
+impl Display for QuantityType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuantityType::Weight => write!(f, "weight"),
+            QuantityType::Volume => write!(f, "volume"),
+        }
+    }
 }
 
 #[cfg(test)]
