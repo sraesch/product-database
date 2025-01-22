@@ -93,6 +93,16 @@ pub struct ProductRequest {
     pub date: DateTime<Utc>,
 }
 
+/// A missing product report.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissingProduct {
+    /// The id of the missing product.
+    pub id: ProductID,
+
+    /// The date when the product has been reported as missing.
+    pub date: DateTime<Utc>,
+}
+
 /// The nutrients of a single product expressed for a reference quantity of 100g.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nutrients {

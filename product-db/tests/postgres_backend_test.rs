@@ -1,4 +1,4 @@
-use std::{env::temp_dir, str::FromStr};
+use std::{collections::HashSet, env::temp_dir, hash::Hash, str::FromStr};
 
 use chrono::Utc;
 use dockertest::{
@@ -6,7 +6,8 @@ use dockertest::{
 };
 use log::info;
 use product_db::{
-    DataBackend, PostgresBackend, PostgresConfig, ProductDescription, ProductRequest, Secret,
+    DataBackend, MissingProduct, MissingProductQuery, PostgresBackend, PostgresConfig,
+    ProductDescription, ProductRequest, Secret,
 };
 
 /// Initialize the logger for the tests.
@@ -27,28 +28,170 @@ fn load_products() -> Vec<ProductDescription> {
     serde_json::from_str(product_data).unwrap()
 }
 
+/// Runs the missing product tests with the given backend.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+async fn missing_product_tests<B: DataBackend>(backend: &B) {
+    // load the missing products to report and sort them by date in ascending order
+    let mut products_to_report: Vec<MissingProduct> =
+        serde_json::from_str(include_str!("missing_products.json")).unwrap();
+    products_to_report.sort_by_key(|p| p.date);
+
+    // insert the missing products
+    let mut ids = Vec::new();
+    for product in products_to_report.iter() {
+        let id = backend
+            .report_missing_product(product.clone())
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+
+    // make sure ids are all unique
+    assert_eq!(
+        HashSet::<_>::from_iter(ids.iter().cloned()).len(),
+        ids.len()
+    );
+
+    // query the reported missing products
+    let missing_products = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: None,
+            sort_asc: true,
+        })
+        .await
+        .unwrap();
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report
+    );
+
+    // use the get_missing_product method to check if the reported missing products are the same as the inserted ones
+    for (id, product) in missing_products.iter() {
+        let missing_product = backend.get_missing_product(*id).await.unwrap();
+        assert_eq!(missing_product, Some(product.clone()));
+    }
+
+    // query the reported missing products in descending order
+    let missing_products_desc = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: None,
+            sort_asc: false,
+        })
+        .await
+        .unwrap();
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products_desc
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report
+            .iter()
+            .rev()
+            .cloned()
+            .collect::<Vec<MissingProduct>>()
+    );
+
+    // use offset and limit to query the reported missing products
+    let missing_products_offset = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 2,
+            offset: 2,
+            product_id: None,
+            sort_asc: true,
+        })
+        .await
+        .unwrap();
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products_offset
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report[2..4].to_vec()
+    );
+
+    // query the reported missing product 'foobar' ... it should occur 3 times
+    let foobar_products = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            sort_asc: false,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        foobar_products.len(),
+        3,
+        "foobar_products: {:?}",
+        foobar_products
+    );
+    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+
+    // delete the first reported missing product
+    backend
+        .delete_reported_missing_product(ids[3])
+        .await
+        .unwrap();
+
+    // query the reported missing product 'foobar' ... it should occur 2 times
+    let foobar_products = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            sort_asc: false,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(foobar_products.len(), 2);
+    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+
+    // delete the first reported missing product again ... nothing should happen
+    backend
+        .delete_reported_missing_product(ids[3])
+        .await
+        .unwrap();
+
+    // query the reported missing product 'foobar' ... it should occur 2 times
+    let foobar_products = backend
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            sort_asc: false,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(foobar_products.len(), 2);
+    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+}
+
 /// Runs the backend tests with the given backend.
 ///
 /// # Arguments
 /// - `backend` - The backend to run the tests with.
 async fn backend_tests<B: DataBackend>(backend: B) {
-    // report a missing product twice
-    let id1 = backend
-        .report_missing_product("missing-product".to_string(), Utc::now())
-        .await
-        .unwrap();
-    let id2 = backend
-        .report_missing_product("missing-product".to_string(), Utc::now())
-        .await
-        .unwrap();
-    assert_ne!(id1, id2, "The ids should be different");
-    info!("Reported missing products with ids: {} and {}", id1, id2);
-
-    // delete the first reported missing product
-    backend.delete_reported_missing_product(id1).await.unwrap();
-
-    // try again to delete the first reported missing product
-    backend.delete_reported_missing_product(id1).await.unwrap();
+    info!("Running backend tests...");
+    missing_product_tests(&backend).await;
+    info!("Running backend tests...SUCCESS");
 
     // load the products from the test_data/products.json file
     let products = load_products();

@@ -1,11 +1,12 @@
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use log::{debug, error, info};
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Executor, Row};
 
 use crate::{
-    DBId, DataBackend, Error, Nutrients, ProductDescription, ProductID, ProductImage,
-    ProductRequest, Result as ProductDBResult, Secret,
+    DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
+    ProductID, ProductImage, ProductRequest, Result as ProductDBResult, Secret,
 };
 
 type Pool = sqlx::PgPool;
@@ -66,17 +67,16 @@ impl PostgresBackend {
 impl DataBackend for PostgresBackend {
     async fn report_missing_product(
         &self,
-        id: ProductID,
-        date: DateTime<Utc>,
+        missing_product: MissingProduct,
     ) -> ProductDBResult<DBId> {
         info!(
             "Report missing product with id: {} with timestamp {}",
-            id, date
+            missing_product.id, missing_product.date
         );
 
         let db_id: DBId = match sqlx::query_scalar("insert into reported_missing_products (product_id, date) values ($1, $2) returning id;")
-        .bind(&id)
-        .bind(date).fetch_one(&self.pool).await {
+        .bind(&missing_product.id)
+        .bind(missing_product.date).fetch_one(&self.pool).await {
                 Ok(row) => row,
                 Err(e) => {
                     error!("Failed to report missing product: {}", e);
@@ -84,9 +84,78 @@ impl DataBackend for PostgresBackend {
                 }
             };
 
-        info!("Reported missing product with id: {} as {}", id, db_id);
+        info!(
+            "Reported missing product with id: {} as {}",
+            missing_product.id, db_id
+        );
 
         Ok(db_id)
+    }
+
+    async fn query_missing_products(
+        &self,
+        query: &MissingProductQuery,
+    ) -> ProductDBResult<Vec<(DBId, MissingProduct)>> {
+        let sorting_order = if query.sort_asc { "asc" } else { "desc" };
+        let mut q: String = String::new();
+        let query = if let Some(product_id) = query.product_id.as_ref() {
+            q = format!("select id, product_id, date from reported_missing_products where product_id = $1 order by date {} offset $2 limit $3;", sorting_order);
+            sqlx::query(q.as_str())
+                .bind(product_id)
+                .bind(query.offset)
+                .bind(query.limit)
+        } else {
+            q = format!("select id, product_id, date from reported_missing_products order by date {} offset $1 limit $2;", sorting_order);
+            sqlx::query(q.as_str()).bind(query.offset).bind(query.limit)
+        };
+
+        let mut rows = self.pool.fetch(query);
+
+        let mut missing_products = Vec::new();
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(|e| Error::DBError(Box::new(e)))?
+        {
+            let id: DBId = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let product_id: ProductID = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+            let date: DateTime<Utc> = row.try_get(2).map_err(|e| Error::DBError(Box::new(e)))?;
+
+            missing_products.push((
+                id,
+                MissingProduct {
+                    id: product_id,
+                    date,
+                },
+            ));
+        }
+
+        Ok(missing_products)
+    }
+
+    async fn get_missing_product(&self, id: DBId) -> ProductDBResult<Option<MissingProduct>> {
+        let query =
+            sqlx::query("select product_id, date from reported_missing_products where id = $1;")
+                .bind(id);
+        let row = match self.pool.fetch_optional(query).await {
+            Ok(row) => row,
+            Err(e) => {
+                error!("Failed to get missing product: {}", e);
+                return Err(Error::DBError(Box::new(e)));
+            }
+        };
+
+        if let Some(row) = row {
+            let product_id: ProductID = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let date: DateTime<Utc> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+
+            Ok(Some(MissingProduct {
+                id: product_id,
+                date,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn delete_reported_missing_product(&self, id: DBId) -> ProductDBResult<()> {
