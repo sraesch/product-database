@@ -335,6 +335,64 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
             check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
         }
     }
+
+    // delete the first 2 requested products
+    backend.delete_requested_product(ids[0]).await.unwrap();
+    backend.delete_requested_product(ids[1]).await.unwrap();
+
+    assert_eq!(
+        backend.get_product_request(ids[0], true).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product_request(ids[1], true).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product_request(ids[0], false).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product_request(ids[1], false).await.unwrap(),
+        None
+    );
+
+    // delete the first 2 requested products again ... nothing should happen
+    backend.delete_requested_product(ids[0]).await.unwrap();
+    backend.delete_requested_product(ids[1]).await.unwrap();
+
+    // check that the last requested product is still there
+    for with_preview in [true, false] {
+        let product_request = backend
+            .get_product_request(ids[2], with_preview)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let out_product = &product_request.product_description;
+        let in_product = &products[2];
+
+        assert_eq!(out_product.name, in_product.name);
+        assert_eq!(out_product.id, in_product.id);
+        assert_eq!(out_product.portion, in_product.portion);
+        assert_eq!(out_product.producer, in_product.producer);
+        assert_eq!(out_product.quantity_type, in_product.quantity_type);
+        assert_eq!(
+            out_product.volume_weight_ratio,
+            in_product.volume_weight_ratio
+        );
+
+        if with_preview {
+            assert_eq!(out_product.preview, in_product.preview);
+
+            // if the preview flag is set, we also test getting the full image of the product
+            let full_image: Option<ProductImage> =
+                backend.get_product_request_image(ids[2]).await.unwrap();
+            assert_eq!(full_image, in_product.full_image);
+        }
+
+        check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
+    }
 }
 
 /// Runs the backend tests with the given backend.
