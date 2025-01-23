@@ -355,6 +355,31 @@ impl DataBackend for PostgresBackend {
         }
     }
 
+    async fn get_product_request_image(&self, id: DBId) -> ProductDBResult<Option<ProductImage>> {
+        debug!("Get product image for product request id: {}", id);
+
+        let query =
+            sqlx::query("select pi.content_type, pi.data from product_image pi join product_description p on p.photo = pi.id where p.id = $1;")
+                .bind(id);
+        let row = match self.pool.fetch_optional(query).await {
+            Ok(row) => row,
+            Err(e) => {
+                error!("Failed to get missing product: {}", e);
+                return Err(Error::DBError(Box::new(e)));
+            }
+        };
+
+        if let Some(row) = row {
+            let content_type: String = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let data: Vec<u8> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+
+            Ok(Some(ProductImage { content_type, data }))
+        } else {
+            debug!("No missing product with id: {}", id);
+            Ok(None)
+        }
+    }
+
     async fn delete_requested_product(&self, id: DBId) -> ProductDBResult<()> {
         info!("Delete requested product with id: {}", id);
 

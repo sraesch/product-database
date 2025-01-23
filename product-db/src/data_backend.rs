@@ -2,7 +2,7 @@ use std::future::Future;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{MissingProduct, ProductID, ProductRequest, Result};
+use crate::{MissingProduct, ProductID, ProductImage, ProductRequest, Result};
 
 pub type DBId = i32;
 
@@ -74,6 +74,15 @@ pub trait DataBackend: Send + Sync {
         id: DBId,
         with_preview: bool,
     ) -> impl Future<Output = Result<Option<ProductRequest>>> + Send;
+
+    /// Retrieves the full product image related to the given product request id.
+    ///
+    /// # Arguments
+    /// - `id` - The internal id of the requested product.
+    fn get_product_request_image(
+        &self,
+        id: DBId,
+    ) -> impl Future<Output = Result<Option<ProductImage>>> + Send;
 
     /// Deletes the requested product from the database.
     ///

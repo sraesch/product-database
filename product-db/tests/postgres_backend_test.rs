@@ -7,7 +7,7 @@ use dockertest::{
 use log::info;
 use product_db::{
     DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductRequest, Secret, Weight,
+    ProductDescription, ProductImage, ProductRequest, Secret, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -325,6 +325,11 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
 
             if with_preview {
                 assert_eq!(out_product.preview, in_product.preview);
+
+                // if the preview flag is set, we also test getting the full image of the product
+                let full_image: Option<ProductImage> =
+                    backend.get_product_request_image(*id).await.unwrap();
+                assert_eq!(full_image, in_product.full_image);
             }
 
             check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
