@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env::temp_dir, hash::Hash, str::FromStr};
+use std::{collections::HashSet, env::temp_dir, str::FromStr};
 
 use chrono::Utc;
 use dockertest::{
@@ -6,8 +6,8 @@ use dockertest::{
 };
 use log::info;
 use product_db::{
-    DataBackend, MissingProduct, MissingProductQuery, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductRequest, Secret,
+    DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
+    ProductDescription, ProductRequest, Secret, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -26,6 +26,95 @@ fn init_logger() {
 fn load_products() -> Vec<ProductDescription> {
     let product_data = include_str!("../../test_data/products.json");
     serde_json::from_str(product_data).unwrap()
+}
+
+/// Slightly lossy comparison of two weights.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+fn compare_lossy_weights(lhs: Weight, rhs: Weight) -> bool {
+    let eps = 1e-5;
+    (lhs.value - rhs.value).abs() < eps
+}
+
+/// Slightly lossy comparison of two optional weights.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+fn compare_lossy_weights_opt(lhs: Option<Weight>, rhs: Option<Weight>) -> bool {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => compare_lossy_weights(lhs, rhs),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Slightly lossy comparison of two nutrients.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+fn check_compare_nutrients(lhs: &Nutrients, rhs: &Nutrients) {
+    let eps = 1e-5;
+
+    assert!((lhs.kcal - rhs.kcal) <= eps, "kcal are different");
+    assert!(
+        compare_lossy_weights_opt(lhs.carbohydrates, rhs.carbohydrates),
+        "carbohydrates are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.fat, rhs.fat),
+        "fat are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.protein, rhs.protein),
+        "protein are different"
+    );
+
+    assert!(
+        compare_lossy_weights_opt(lhs.sugar, rhs.sugar),
+        "sugar are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.salt, rhs.salt),
+        "salt are different"
+    );
+
+    assert!(
+        compare_lossy_weights_opt(lhs.vitamin_a, rhs.vitamin_a),
+        "vitamin_a are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.vitamin_c, rhs.vitamin_c),
+        "vitamin_c are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.vitamin_d, rhs.vitamin_d),
+        "vitamin_d are different"
+    );
+
+    assert!(
+        compare_lossy_weights_opt(lhs.iron, rhs.iron),
+        "iron are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.calcium, rhs.calcium),
+        "calcium are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.magnesium, rhs.magnesium),
+        "magnesium are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.sodium, rhs.sodium),
+        "sodium are different"
+    );
+    assert!(
+        compare_lossy_weights_opt(lhs.zinc, rhs.zinc),
+        "zinc are different"
+    );
 }
 
 /// Runs the missing product tests with the given backend.
@@ -184,19 +273,16 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
     assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
 }
 
-/// Runs the backend tests with the given backend.
+/// Runs the product requests tests with the given backend.
 ///
 /// # Arguments
 /// - `backend` - The backend to run the tests with.
-async fn backend_tests<B: DataBackend>(backend: B) {
-    info!("Running backend tests...");
-    missing_product_tests(&backend).await;
-    info!("Running backend tests...SUCCESS");
-
+async fn product_requests_tests<B: DataBackend>(backend: &B) {
     // load the products from the test_data/products.json file
     let products = load_products();
 
     // request the products in the list
+    let mut ids = Vec::new();
     for product_desc in products.iter() {
         let product_request = ProductRequest {
             product_description: product_desc.clone(),
@@ -205,7 +291,46 @@ async fn backend_tests<B: DataBackend>(backend: B) {
 
         let id = backend.request_new_product(&product_request).await.unwrap();
         info!("Requested product with id: {}", id);
+
+        ids.push(id);
     }
+
+    info!("Requested products with ids: {:?}", ids);
+
+    // make sure ids are all unique
+    assert_eq!(
+        HashSet::<_>::from_iter(ids.iter().cloned()).len(),
+        ids.len()
+    );
+
+    // check if the requested products are the same as the inserted ones by using the get_missing_product method
+    for with_preview in [true, false] {
+        for (id, in_product) in ids.iter().zip(products.iter()) {
+            let product_request = backend
+                .get_product_request(*id, with_preview)
+                .await
+                .unwrap()
+                .unwrap();
+
+            let out_product = &product_request.product_description;
+            assert_eq!(out_product.name, in_product.name);
+            assert_eq!(out_product.id, in_product.id);
+            assert_eq!(out_product.portion, in_product.portion);
+            assert_eq!(out_product.producer, in_product.producer);
+            assert_eq!(out_product.quantity_type, in_product.quantity_type);
+            assert_eq!(
+                out_product.volume_weight_ratio,
+                in_product.volume_weight_ratio
+            );
+
+            if with_preview {
+                assert_eq!(out_product.preview, in_product.preview);
+            }
+
+            check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
+        }
+    }
+}
 
 /// Runs the backend tests with the given backend.
 ///

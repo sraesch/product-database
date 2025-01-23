@@ -1,12 +1,16 @@
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
-use log::{debug, error, info};
+use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, Executor, Row};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions, Executor, Row,
+};
 
 use crate::{
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductRequest, Result as ProductDBResult, Secret,
+    ProductID, ProductImage, ProductRequest, QuantityType, Result as ProductDBResult, Secret,
+    Weight,
 };
 
 type Pool = sqlx::PgPool;
@@ -34,21 +38,27 @@ impl PostgresBackend {
     /// # Arguments
     /// * `config` - The configuration for the postgres connection.
     pub async fn new(config: PostgresConfig) -> ProductDBResult<Self> {
-        // create connection string
-        let connection_string = format!(
-            "postgresql://{}:{}@{}:{}/{}",
-            config.user,
-            config.password.secret(),
-            config.host,
-            config.port,
-            config.dbname
-        );
-
         // create the connection pool
         info!("Creating Postgres connection pool...");
+
+        // get the current log level
+        let log_level = log::max_level();
+
+        let options: PgConnectOptions = PgConnectOptions::new()
+            .host(&config.host)
+            .port(config.port)
+            .username(&config.user)
+            .password(config.password.secret())
+            .database(&config.dbname)
+            .log_statements(if log_level == log::Level::Trace {
+                LevelFilter::Trace
+            } else {
+                LevelFilter::Off
+            });
+
         let pool = match PgPoolOptions::new()
             .max_connections(config.max_connections)
-            .connect(&connection_string)
+            .connect_with(options)
             .await
         {
             Ok(pool) => pool,
@@ -97,6 +107,7 @@ impl DataBackend for PostgresBackend {
         query: &MissingProductQuery,
     ) -> ProductDBResult<Vec<(DBId, MissingProduct)>> {
         let sorting_order = if query.sort_asc { "asc" } else { "desc" };
+
         let mut q: String = String::new();
         let query = if let Some(product_id) = query.product_id.as_ref() {
             q = format!("select id, product_id, date from reported_missing_products where product_id = $1 order by date {} offset $2 limit $3;", sorting_order);
@@ -134,6 +145,8 @@ impl DataBackend for PostgresBackend {
     }
 
     async fn get_missing_product(&self, id: DBId) -> ProductDBResult<Option<MissingProduct>> {
+        debug!("Get missing product with id: {}", id);
+
         let query =
             sqlx::query("select product_id, date from reported_missing_products where id = $1;")
                 .bind(id);
@@ -149,11 +162,15 @@ impl DataBackend for PostgresBackend {
             let product_id: ProductID = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
             let date: DateTime<Utc> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
 
+            debug!("Found missing product with id: {}", id);
+            trace!("Product: id={}, date={}", product_id, date);
+
             Ok(Some(MissingProduct {
                 id: product_id,
                 date,
             }))
         } else {
+            debug!("No missing product with id: {}", id);
             Ok(None)
         }
     }
@@ -214,7 +231,27 @@ impl DataBackend for PostgresBackend {
             id, with_preview
         );
 
-        let query = sqlx::query("select product_id, date, name, producer, protein_grams, fat_grams, carbohydrates_grams, sugar_grams, salt_grams, vitaminA_mg, vitaminC_mg, vitaminD_Mg, iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg from requested_products where id = $1;").bind(&id);
+        let query_str = if !with_preview {
+            "select
+        product_id, date, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitaminA_mg, vitaminC_mg, vitaminD_Mg,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg
+        from requested_products_full where r_id = $1;"
+        } else {
+            "select
+        product_id, date, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitaminA_mg, vitaminC_mg, vitaminD_Mg,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
+        preview, preview_content_type
+        from requested_products_full_with_preview where r_id = $1;"
+        };
+
+        let query = sqlx::query(query_str).bind(id);
+
         let row = match self.pool.fetch_optional(query).await {
             Ok(row) => row,
             Err(e) => {
@@ -224,36 +261,96 @@ impl DataBackend for PostgresBackend {
         };
 
         if let Some(row) = row {
-            let product_id = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let product_id: ProductID = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
             let date: DateTime<Utc> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
             let name: String = row.try_get(2).map_err(|e| Error::DBError(Box::new(e)))?;
-            let producer: String = row.try_get(3).map_err(|e| Error::DBError(Box::new(e)))?;
-            let protein_grams: Option<f64> =
+            let producer: Option<String> =
+                row.try_get(3).map_err(|e| Error::DBError(Box::new(e)))?;
+            let quantity_type: QuantityType =
                 row.try_get(4).map_err(|e| Error::DBError(Box::new(e)))?;
-            let fat_grams: Option<f64> = row.try_get(5).map_err(|e| Error::DBError(Box::new(e)))?;
-            let carbohydrates_grams: Option<f64> =
+            let portion: f32 = row.try_get(5).map_err(|e| Error::DBError(Box::new(e)))?;
+            let volume_weight_ratio: Option<f32> =
                 row.try_get(6).map_err(|e| Error::DBError(Box::new(e)))?;
-            let sugar_grams: Option<f64> =
-                row.try_get(7).map_err(|e| Error::DBError(Box::new(e)))?;
-            let salt_grams: Option<f64> =
+            let kcal: f32 = row.try_get(7).map_err(|e| Error::DBError(Box::new(e)))?;
+            let protein_grams: Option<f32> =
                 row.try_get(8).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitaminA_mg: Option<f64> =
-                row.try_get(9).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitaminC_mg: Option<f64> =
+            let fat_grams: Option<f32> = row.try_get(9).map_err(|e| Error::DBError(Box::new(e)))?;
+            let carbohydrates_grams: Option<f32> =
                 row.try_get(10).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitaminD_mg: Option<f64> =
+            let sugar_grams: Option<f32> =
                 row.try_get(11).map_err(|e| Error::DBError(Box::new(e)))?;
-            let iron_mg: Option<f64> = row.try_get(12).map_err(|e| Error::DBError(Box::new(e)))?;
-            let calcium_mg: Option<f64> =
+            let salt_grams: Option<f32> =
+                row.try_get(12).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitamin_a_mg: Option<f32> =
                 row.try_get(13).map_err(|e| Error::DBError(Box::new(e)))?;
-            let magnesium_mg: Option<f64> =
+            let vitamin_c_mg: Option<f32> =
                 row.try_get(14).map_err(|e| Error::DBError(Box::new(e)))?;
-            let sodium_mg: Option<f64> =
+            let vitamin_d_μg: Option<f32> =
                 row.try_get(15).map_err(|e| Error::DBError(Box::new(e)))?;
-            let zinc_mg: Option<f64> = row.try_get(16).map_err(|e| Error::DBError(Box::new(e)))?;
+            let iron_mg: Option<f32> = row.try_get(16).map_err(|e| Error::DBError(Box::new(e)))?;
+            let calcium_mg: Option<f32> =
+                row.try_get(17).map_err(|e| Error::DBError(Box::new(e)))?;
+            let magnesium_mg: Option<f32> =
+                row.try_get(18).map_err(|e| Error::DBError(Box::new(e)))?;
+            let sodium_mg: Option<f32> =
+                row.try_get(19).map_err(|e| Error::DBError(Box::new(e)))?;
+            let zinc_mg: Option<f32> = row.try_get(20).map_err(|e| Error::DBError(Box::new(e)))?;
 
-            unimplemented!()
+            let preview: Option<ProductImage> = if !with_preview {
+                trace!(
+                    "Skip preview image decoding for product request with id: {}",
+                    id
+                );
+                None
+            } else {
+                trace!("Decode preview image for product request with id: {}", id);
+
+                let preview_data: Option<Vec<u8>> =
+                    row.try_get(21).map_err(|e| Error::DBError(Box::new(e)))?;
+                let content_type: Option<String> =
+                    row.try_get(22).map_err(|e| Error::DBError(Box::new(e)))?;
+
+                trace!("Decoded preview image for product request with id: {}, Length={}, content-type={}",
+                       id, preview_data.as_ref().map(|d| d.len()).unwrap_or_default(),
+                       content_type.as_deref().unwrap_or_default());
+
+                preview_data.map(|preview_data| ProductImage {
+                    content_type: content_type.unwrap_or_default(),
+                    data: preview_data,
+                })
+            };
+
+            Ok(Some(ProductRequest {
+                product_description: ProductDescription {
+                    id: product_id,
+                    name,
+                    producer,
+                    quantity_type,
+                    portion,
+                    volume_weight_ratio,
+                    preview,
+                    full_image: None,
+                    nutrients: Nutrients {
+                        kcal,
+                        protein: protein_grams.map(Weight::new_from_gram),
+                        fat: fat_grams.map(Weight::new_from_gram),
+                        carbohydrates: carbohydrates_grams.map(Weight::new_from_gram),
+                        sugar: sugar_grams.map(Weight::new_from_gram),
+                        salt: salt_grams.map(Weight::new_from_gram),
+                        vitamin_a: vitamin_a_mg.map(Weight::new_from_milligram),
+                        vitamin_c: vitamin_c_mg.map(Weight::new_from_milligram),
+                        vitamin_d: vitamin_d_μg.map(Weight::new_from_microgram),
+                        iron: iron_mg.map(Weight::new_from_milligram),
+                        calcium: calcium_mg.map(Weight::new_from_milligram),
+                        magnesium: magnesium_mg.map(Weight::new_from_milligram),
+                        sodium: sodium_mg.map(Weight::new_from_milligram),
+                        zinc: zinc_mg.map(Weight::new_from_milligram),
+                    },
+                },
+                date,
+            }))
         } else {
+            debug!("No product request with id: {}", id);
             Ok(None)
         }
     }

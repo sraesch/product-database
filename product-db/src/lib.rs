@@ -40,7 +40,7 @@ pub struct ProductInfo {
 }
 
 /// The description of a product.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductDescription {
     pub id: ProductID,
 
@@ -54,7 +54,7 @@ pub struct ProductDescription {
 
     /// The amount for one portion of the product in grams or ml
     /// depending on the quantity type
-    pub portion: Option<f32>,
+    pub portion: f32,
 
     /// The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
     /// Is only defined if the quantity type is volume
@@ -72,7 +72,7 @@ pub struct ProductDescription {
 
 /// A image of the product. Can be a preview or full image of the product.
 #[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductImage {
     #[serde(rename = "contentType")]
     /// The content type of the preview image.
@@ -84,7 +84,7 @@ pub struct ProductImage {
 }
 
 /// A request to add a new product to the database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductRequest {
     /// The information about the product.
     pub product_description: ProductDescription,
@@ -104,7 +104,7 @@ pub struct MissingProduct {
 }
 
 /// The nutrients of a single product expressed for a reference quantity of 100g.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Nutrients {
     pub kcal: f32,
 
@@ -146,6 +146,12 @@ impl Weight {
     pub fn new_from_milligram(milligram: f32) -> Self {
         Self {
             value: milligram * 1e-3,
+        }
+    }
+
+    pub fn new_from_microgram(microgram: f32) -> Self {
+        Self {
+            value: microgram * 1e-6,
         }
     }
 
@@ -216,7 +222,9 @@ impl QuantityInner {
 }
 
 /// The quantity in which the product details are expressed
-#[derive(Debug, sqlx::Type, Clone, Serialize, Deserialize)]
+#[derive(
+    Debug, sqlx::Type, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 #[sqlx(type_name = "QuantityType", rename_all = "lowercase")]
 pub enum QuantityType {
     #[serde(rename = "weight")]
