@@ -206,11 +206,45 @@ async fn backend_tests<B: DataBackend>(backend: B) {
         let id = backend.request_new_product(&product_request).await.unwrap();
         info!("Requested product with id: {}", id);
     }
+
+/// Runs the backend tests with the given backend.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+async fn backend_tests<B: DataBackend>(backend: B) {
+    info!("Running backend tests...");
+    missing_product_tests(&backend).await;
+    info!("Running backend tests...SUCCESS");
+
+    info!("Running product requests tests...");
+    product_requests_tests(&backend).await;
+    info!("Running product requests tests...SUCCESS");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_postgres_backend() {
     init_logger();
+
+    // check if the TEST_DATABASE_URL environment variable is set
+    if std::env::var("TEST_DATABASE_URL").is_ok() {
+        info!("TEST_DATABASE_URL has been provided, skipping docker test and using the provided database");
+        let options = PostgresConfig {
+            host: "localhost".to_string(),
+            port: 5432,
+            dbname: "postgres".to_string(),
+            user: "postgres".to_string(),
+            password: Secret::from_str("postgres").unwrap(),
+            max_connections: 5,
+        };
+
+        let postgres_backend = PostgresBackend::new(options).await.unwrap();
+
+        info!("Running backend tests...");
+        backend_tests(postgres_backend).await;
+        info!("Running backend tests...SUCCESS");
+
+        return;
+    }
 
     // Define our test instance
     let mut test = DockerTest::new();
