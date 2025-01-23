@@ -1,30 +1,28 @@
-create type QuantityType AS ENUM ('weight', 'volume');
+CREATE TYPE QuantityType AS ENUM(
+    'weight',
+    'volume'
+);
 
 -- The table that stores the product images like previews and full images
-create table if not exists product_image (
-    id SERIAL PRIMARY KEY, -- The id of the product image
-    data bytea not null, -- The data of image
-    content_type varchar(32) not null -- The content type of the image
+CREATE TABLE IF NOT EXISTS product_image(
+    id serial PRIMARY KEY, -- The id of the product image
+    data bytea NOT NULL, -- The data of image
+    content_type varchar(32) NOT NULL -- The content type of the image
 );
 
 -- The table stores the nutrition information of the products
 -- All values are in grams relative to the reference quantity of 100g
-create table if not exists nutrients (
-    id  SERIAL PRIMARY KEY, -- The id of the nutrients entry
-
-    kcal real not null, -- The amount of kcal in the product
-
+CREATE TABLE IF NOT EXISTS nutrients(
+    id serial PRIMARY KEY, -- The id of the nutrients entry
+    kcal real NOT NULL, -- The amount of kcal in the product
     protein_grams real, -- The amount of protein in the product in grams
     fat_grams real, -- The amount of fat in the product in grams
     carbohydrates_grams real, -- The amount of carbohydrates in the product in grams
-
     sugar_grams real, -- The amount of sugar in the product in grams
     salt_grams real, -- The amount of salt in the product in grams
-
     vitaminA_mg real, -- The amount of vitamin A in the product in milligrams
     vitaminC_mg real, -- The amount of vitamin C in the product in milligrams
     vitaminD_Mg real, -- The amount of vitamin D in the product in micrograms
-
     iron_mg real, -- The amount of iron in the product in milligrams
     calcium_mg real, -- The amount of calcium in the product in milligrams
     magnesium_mg real, -- The amount of magnesium in the product in milligrams
@@ -33,66 +31,162 @@ create table if not exists nutrients (
 );
 
 -- Products which have been scanned by the users, but are not in the database
-create table if not exists reported_missing_products (
-    id  SERIAL PRIMARY KEY, -- The id of the reported entry
-    product_id varchar(64) not null, -- The id of the missing product
-    date timestamp with time zone not null -- The date when the request was made
+CREATE TABLE IF NOT EXISTS reported_missing_products(
+    id serial PRIMARY KEY, -- The id of the reported entry
+    product_id varchar(64) NOT NULL, -- The id of the missing product
+    date timestamp with time zone NOT NULL -- The date when the request was made
 );
 
 -- The table that stores full product descriptions
 -- Product descriptions can be requested new products or regular products in the database
-create table if not exists product_description (
-    id SERIAL PRIMARY KEY, -- The id of the product info entry
-    product_id varchar(64) not null, -- The id of the product
-    name varchar(64) not null, -- The name of the product
+CREATE TABLE IF NOT EXISTS product_description(
+    id serial PRIMARY KEY, -- The id of the product info entry
+    product_id varchar(64) NOT NULL, -- The id of the product
+    name varchar(64) NOT NULL, -- The name of the product
     producer varchar(64), -- The producer of the product
-
     -- The quantity type is either weight or volume.
     -- Weight in grams is used for products like flour, sugar, etc.
     -- Volume in ml is used for products like milk, water, etc.
-    quantity_type QuantityType not null,
-
+    quantity_type QuantityType NOT NULL,
     -- The amount for one portion of the product in grams or ml
     -- depending on the quantity type
-    portion real not null,
-
+    portion real NOT NULL,
     -- The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
     -- Is only defined if the quantity type is volume
     volume_weight_ratio real,
-
-    preview int,  -- Reference onto a preview image
+    preview int, -- Reference onto a preview image
     photo int, -- Reference onto a full image
-    nutrients int not null, -- Reference onto the nutrients of the product
-
+    nutrients int NOT NULL, -- Reference onto the nutrients of the product
     FOREIGN KEY (preview) REFERENCES product_image(id) ON DELETE CASCADE,
     FOREIGN KEY (photo) REFERENCES product_image(id) ON DELETE CASCADE,
     FOREIGN KEY (nutrients) REFERENCES nutrients(id) ON DELETE CASCADE
 );
 
 -- The table that stores the products
-create table if not exists products (
-    product_id varchar(64) not null, -- The id of the product
-    product_description_id int not null, -- The id of the product description entry
-
-    PRIMARY KEY(product_id),
+CREATE TABLE IF NOT EXISTS products(
+    product_id varchar(64) NOT NULL, -- The id of the product
+    product_description_id int NOT NULL, -- The id of the product description entry
+    PRIMARY KEY (product_id),
     FOREIGN KEY (product_description_id) REFERENCES product_description(id) ON DELETE CASCADE
 );
 
 -- This table stores requested products
-create table if not exists requested_products(
-    id  SERIAL PRIMARY KEY, -- The id of the entry
-    product_description_id int not null, -- The id of the product description entry
-    date timestamp with time zone  not null, -- The date when the product was missing
+CREATE TABLE IF NOT EXISTS requested_products(
+    id serial PRIMARY KEY, -- The id of the entry
+    product_description_id int NOT NULL, -- The id of the product description entry
+    date timestamp with time zone NOT NULL, -- The date when the product was missing
     FOREIGN KEY (product_description_id) REFERENCES product_description(id) ON DELETE CASCADE
 );
 
--- create a new product request
-create view requested_products_full as
-       select r.id, r.date,
-              p.name, p.producer, p.quantity_type, p.portion, p.volume_weight_ratio, p.preview,
-              p.photo, n.kcal,
-              n.protein_grams, n.fat_grams, n.carbohydrates_grams, n.sugar_grams, n.salt_grams,
-              n.vitaminA_mg, n.vitaminC_mg, n.vitaminD_Mg, n.iron_mg, n.calcium_mg, n.magnesium_mg,
-              n.sodium_mg, n.zinc_mg
-        from requested_products r, product_description p, nutrients n
-        where r.id = 1 and p.id = r.product_description_id and n.id = p.nutrients;
+-- Create a view that joins the requested products with the product description and nutrients
+CREATE VIEW requested_products_full AS
+SELECT
+    r.id r_id,
+    r.date,
+    p.name,
+    p.producer,
+    p.quantity_type,
+    p.portion,
+    p.product_id,
+    p.volume_weight_ratio,
+    p.preview,
+    p.photo,
+    n.kcal,
+    n.protein_grams,
+    n.fat_grams,
+    n.carbohydrates_grams,
+    n.sugar_grams,
+    n.salt_grams,
+    n.vitaminA_mg,
+    n.vitaminC_mg,
+    n.vitaminD_Mg,
+    n.iron_mg,
+    n.calcium_mg,
+    n.magnesium_mg,
+    n.sodium_mg,
+    n.zinc_mg
+FROM
+    requested_products r
+    JOIN product_description p ON p.id = r.product_description_id
+    JOIN nutrients n ON p.nutrients = n.id;
+
+-- Create a view that joins the requested products with the product description and nutrients including the preview image
+CREATE VIEW requested_products_full_with_preview AS
+SELECT
+    r.id AS r_id,
+    r.date,
+    p.name,
+    p.producer,
+    p.quantity_type,
+    p.portion,
+    p.product_id,
+    p.volume_weight_ratio,
+    pi.data AS preview,
+    pi.content_type AS preview_content_type,
+    p.photo,
+    n.kcal,
+    n.protein_grams,
+    n.fat_grams,
+    n.carbohydrates_grams,
+    n.sugar_grams,
+    n.salt_grams,
+    n.vitaminA_mg,
+    n.vitaminC_mg,
+    n.vitaminD_Mg,
+    n.iron_mg,
+    n.calcium_mg,
+    n.magnesium_mg,
+    n.sodium_mg,
+    n.zinc_mg
+FROM
+    requested_products r
+    JOIN product_description p ON p.id = r.product_description_id
+    JOIN nutrients n ON p.nutrients = n.id
+    LEFT JOIN product_image pi ON p.preview = pi.id;
+
+-- Trigger function to delete the product description when a product request is deleted
+CREATE OR REPLACE FUNCTION trigger_func_delete_product_or_requested_product()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    DELETE FROM product_description
+    WHERE id = OLD.product_description_id;
+    RETURN OLD;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- Trigger function to delete the nutrients, preview image and full image when a product description is deleted
+CREATE OR REPLACE FUNCTION trigger_func_delete_product_description()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    DELETE FROM nutrients
+    WHERE id = OLD.nutrients;
+    DELETE FROM product_image
+    WHERE id = OLD.preview;
+    DELETE FROM product_image
+    WHERE id = OLD.photo;
+    RETURN OLD;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- Trigger to delete the product description when a product request is deleted
+CREATE TRIGGER trigger_delete_requested_product
+    AFTER DELETE ON requested_products
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_func_delete_product_or_requested_product();
+
+-- Trigger to delete the product description when a product is deleted
+CREATE TRIGGER trigger_delete_product
+    AFTER DELETE ON products
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_func_delete_product_or_requested_product();
+
+-- Trigger to delete the nutrients, preview image and full image when a product description is deleted
+CREATE TRIGGER trigger_delete_product_description
+    AFTER DELETE ON product_description
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_func_delete_product_description();
+
