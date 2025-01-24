@@ -3,7 +3,6 @@ use futures::TryStreamExt;
 use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
 use sqlx::{
-    error::DatabaseError,
     postgres::{PgConnectOptions, PgPoolOptions},
     ConnectOptions, Executor, Row,
 };
@@ -109,16 +108,18 @@ impl DataBackend for PostgresBackend {
     ) -> ProductDBResult<Vec<(DBId, MissingProduct)>> {
         let sorting_order = if query.sort_asc { "asc" } else { "desc" };
 
-        let mut q: String = String::new();
+        let mut _q: String = String::new();
         let query = if let Some(product_id) = query.product_id.as_ref() {
-            q = format!("select id, product_id, date from reported_missing_products where product_id = $1 order by date {} offset $2 limit $3;", sorting_order);
-            sqlx::query(q.as_str())
+            _q = format!("select id, product_id, date from reported_missing_products where product_id = $1 order by date {} offset $2 limit $3;", sorting_order);
+            sqlx::query(_q.as_str())
                 .bind(product_id)
                 .bind(query.offset)
                 .bind(query.limit)
         } else {
-            q = format!("select id, product_id, date from reported_missing_products order by date {} offset $1 limit $2;", sorting_order);
-            sqlx::query(q.as_str()).bind(query.offset).bind(query.limit)
+            _q = format!("select id, product_id, date from reported_missing_products order by date {} offset $1 limit $2;", sorting_order);
+            sqlx::query(_q.as_str())
+                .bind(query.offset)
+                .bind(query.limit)
         };
 
         let mut rows = self.pool.fetch(query);
@@ -649,7 +650,7 @@ impl PostgresBackend {
             zinc_mg
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id;",
         )
-        .bind(&nutrients.kcal)
+        .bind(nutrients.kcal)
         .bind(nutrients.protein.map(|w| w.gram()))
         .bind(nutrients.fat.map(|w| w.gram()))
         .bind(nutrients.carbohydrates.map(|w| w.gram()))
