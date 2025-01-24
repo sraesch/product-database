@@ -1,15 +1,11 @@
 use std::{
     fmt::{self, Display, Formatter},
     future::Future,
-    iter::Product,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    MissingProduct, ProductDescription, ProductID, ProductImage, ProductInfo, ProductRequest,
-    Result,
-};
+use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
 
 pub type DBId = i32;
 
