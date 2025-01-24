@@ -1,3 +1,10 @@
+-- Activate the pg_trgm extension for fuzzy search
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+--
+-- DEFINITION OF TABLES, TYPES AND INDICES
+--
+-- Define type for the quantity type of the product
 CREATE TYPE QuantityType AS ENUM(
     'weight',
     'volume'
@@ -37,6 +44,9 @@ CREATE TABLE IF NOT EXISTS reported_missing_products(
     date timestamp with time zone NOT NULL -- The date when the request was made
 );
 
+-- Index for product_id in reported_missing_products
+CREATE INDEX IF NOT EXISTS reported_missing_products_product_id_index ON reported_missing_products(product_id);
+
 -- The table that stores full product descriptions
 -- Product descriptions can be requested new products or regular products in the database
 CREATE TABLE IF NOT EXISTS product_description(
@@ -62,6 +72,12 @@ CREATE TABLE IF NOT EXISTS product_description(
     FOREIGN KEY (nutrients) REFERENCES nutrients(id) ON DELETE CASCADE
 );
 
+-- Index for product_id in product_description
+CREATE INDEX IF NOT EXISTS product_description_product_id_index ON product_description(product_id);
+
+-- Index for the name of the product in product_description
+CREATE INDEX IF NOT EXISTS product_description_name_trgm_idx ON product_description USING gist(name gist_trgm_ops);
+
 -- The table that stores the products
 CREATE TABLE IF NOT EXISTS products(
     product_id varchar(64) NOT NULL, -- The id of the product
@@ -78,6 +94,9 @@ CREATE TABLE IF NOT EXISTS requested_products(
     FOREIGN KEY (product_description_id) REFERENCES product_description(id) ON DELETE CASCADE
 );
 
+--
+-- DEFINITION OF VIEWS
+--
 -- Create a view that joins the requested products with the product description and nutrients
 CREATE VIEW requested_products_full AS
 SELECT
@@ -217,6 +236,9 @@ FROM
     JOIN product_description p ON p.id = r.product_description_id
     JOIN product_image pi ON p.photo = pi.id;
 
+--
+-- DEFINITION OF FUNCTIONS
+--
 -- Trigger function to delete the product description when a product request is deleted
 CREATE OR REPLACE FUNCTION trigger_func_delete_product_or_requested_product()
     RETURNS TRIGGER
@@ -245,6 +267,9 @@ END;
 $$
 LANGUAGE plpgsql;
 
+--
+-- DEFINITION OF TRIGGERS
+--
 -- Trigger to delete the product description when a product request is deleted
 CREATE TRIGGER trigger_delete_requested_product
     AFTER DELETE ON requested_products
