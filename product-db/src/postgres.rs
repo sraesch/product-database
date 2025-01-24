@@ -10,8 +10,8 @@ use sqlx::{
 
 use crate::{
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductRequest, QuantityType, Result as ProductDBResult, Secret,
-    Weight,
+    ProductID, ProductImage, ProductInfo, ProductRequest, QuantityType, Result as ProductDBResult,
+    Secret, Weight,
 };
 
 type Pool = sqlx::PgPool;
@@ -197,7 +197,7 @@ impl DataBackend for PostgresBackend {
         let product_desc = &requested_product.product_description;
         let date = &requested_product.date;
 
-        info!("Request new product with name: {}", product_desc.name);
+        info!("Request new product with name: {}", product_desc.info.name);
 
         // create the product description entry
         let product_desc_id = self.create_product_description(product_desc).await?;
@@ -217,7 +217,7 @@ impl DataBackend for PostgresBackend {
 
         info!(
             "Requested new product with name: {} as {}",
-            product_desc.name, db_id
+            product_desc.info.name, db_id
         );
         Ok(db_id)
     }
@@ -323,12 +323,14 @@ impl DataBackend for PostgresBackend {
 
             Ok(Some(ProductRequest {
                 product_description: ProductDescription {
-                    id: product_id,
-                    name,
-                    producer,
-                    quantity_type,
-                    portion,
-                    volume_weight_ratio,
+                    info: ProductInfo {
+                        id: product_id,
+                        name,
+                        producer,
+                        quantity_type,
+                        portion,
+                        volume_weight_ratio,
+                    },
                     preview,
                     full_image: None,
                     nutrients: Nutrients {
@@ -400,25 +402,25 @@ impl DataBackend for PostgresBackend {
         Ok(())
     }
 
-    async fn new_product(&self, product_info: &ProductDescription) -> ProductDBResult<bool> {
-        info!("New product with id: {}", product_info.id);
+    async fn new_product(&self, product_desc: &ProductDescription) -> ProductDBResult<bool> {
+        info!("New product with id: {}", product_desc.info.id);
 
         // create the product description entry
-        let product_desc_id = self.create_product_description(product_info).await?;
+        let product_desc_id = self.create_product_description(product_desc).await?;
 
         // insert the product into the products table
         let q = sqlx::query(
             "insert into products (product_description_id, product_id) values ($1, $2);",
         )
         .bind(product_desc_id)
-        .bind(&product_info.id);
+        .bind(&product_desc.info.id);
 
         if let Err(err) = self.pool.execute(q).await {
             if let sqlx::Error::Database(ref db_err) = err {
                 if db_err.is_unique_violation() {
                     info!(
                         "Product with id {} already exists in the database",
-                        product_info.id
+                        product_desc.info.id
                     );
 
                     // we need to cleanup the created product description entry
@@ -431,16 +433,22 @@ impl DataBackend for PostgresBackend {
 
                     return Ok(false);
                 } else {
-                    error!("Failed to add product with id {}: {}", product_info.id, err);
+                    error!(
+                        "Failed to add product with id {}: {}",
+                        product_desc.info.id, err
+                    );
                     return Err(Error::DBError(Box::new(err)));
                 }
             } else {
-                error!("Failed to add product with id {}: {}", product_info.id, err);
+                error!(
+                    "Failed to add product with id {}: {}",
+                    product_desc.info.id, err
+                );
                 return Err(Error::DBError(Box::new(err)));
             }
         }
 
-        info!("New product {} added", product_info.id);
+        info!("New product {} added", product_desc.info.id);
 
         Ok(true)
     }
@@ -541,12 +549,14 @@ impl DataBackend for PostgresBackend {
             };
 
             Ok(Some(ProductDescription {
-                id: product_id,
-                name,
-                producer,
-                quantity_type,
-                portion,
-                volume_weight_ratio,
+                info: ProductInfo {
+                    id: product_id,
+                    name,
+                    producer,
+                    quantity_type,
+                    portion,
+                    volume_weight_ratio,
+                },
                 preview,
                 full_image: None,
                 nutrients: Nutrients {
@@ -718,7 +728,7 @@ impl PostgresBackend {
     async fn create_product_description(&self, desc: &ProductDescription) -> ProductDBResult<DBId> {
         debug!(
             "Create new product description: id={}, name={}",
-            desc.id, desc.name,
+            desc.info.id, desc.info.name,
         );
 
         let nutrients = self.create_nutrients_entry(&desc.nutrients);
@@ -764,12 +774,12 @@ impl PostgresBackend {
             nutrients
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id;",
         )
-        .bind(&desc.id)
-        .bind(&desc.name)
-        .bind(&desc.producer)
-        .bind(&desc.quantity_type)
-        .bind(desc.portion)
-        .bind(desc.volume_weight_ratio)
+        .bind(&desc.info.id)
+        .bind(&desc.info.name)
+        .bind(&desc.info.producer)
+        .bind(&desc.info.quantity_type)
+        .bind(desc.info.portion)
+        .bind(desc.info.volume_weight_ratio)
         .bind(preview)
         .bind(full_image)
         .bind(nutrients);
@@ -779,7 +789,7 @@ impl PostgresBackend {
             Err(e) => {
                 error!(
                     "Create new product description: id={}, name={}, FAILED",
-                    desc.id, desc.name
+                    desc.info.id, desc.info.name
                 );
                 return Err(Error::DBError(Box::new(e)));
             }
@@ -788,7 +798,7 @@ impl PostgresBackend {
         let db_id: DBId = row.get(0);
         debug!(
             "Create new product description: id={}, name={}, DB-Id={} DONE",
-            desc.id, desc.name, db_id
+            desc.info.id, desc.info.name, db_id
         );
 
         Ok(db_id)

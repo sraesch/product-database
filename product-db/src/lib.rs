@@ -24,6 +24,22 @@ pub type ProductID = String;
 /// nutrients, and images.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductDescription {
+    /// The general information about the product.
+    pub info: ProductInfo,
+
+    /// A preview image of the product.
+    pub preview: Option<ProductImage>,
+
+    /// The full image of the product.
+    pub full_image: Option<ProductImage>,
+
+    /// The nutrients of the product.
+    pub nutrients: Nutrients,
+}
+
+/// The information about a product.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductInfo {
     /// The id of the product. Can be EAN, GTIN, or any other unique identifier.
     pub id: ProductID,
 
@@ -45,15 +61,6 @@ pub struct ProductDescription {
     /// The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
     /// Is only defined if the quantity type is volume
     pub volume_weight_ratio: Option<f32>,
-
-    /// A preview image of the product.
-    pub preview: Option<ProductImage>,
-
-    /// The full image of the product.
-    pub full_image: Option<ProductImage>,
-
-    /// The nutrients of the product.
-    pub nutrients: Nutrients,
 }
 
 /// A image of the product. Can be a preview or full image of the product.

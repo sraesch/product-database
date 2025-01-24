@@ -94,10 +94,10 @@ pub trait DataBackend: Send + Sync {
     /// the product already exists.
     ///
     /// # Arguments
-    /// - `product_info` - The information about the product to be added.
+    /// - `product_desc` - The description about the product to be added.
     fn new_product(
         &self,
-        product_info: &ProductDescription,
+        product_desc: &ProductDescription,
     ) -> impl Future<Output = Result<bool>> + Send;
 
     /// Retrieves the details about the product with the given id.

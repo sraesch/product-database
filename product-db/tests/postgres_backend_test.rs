@@ -136,7 +136,7 @@ async fn simple_ops<B: DataBackend>(backend: &B) {
         .unwrap();
 
     // delete both entries
-    backend.delete_product(&products[0].id).await.unwrap();
+    backend.delete_product(&products[0].info.id).await.unwrap();
     backend.delete_requested_product(req_id).await.unwrap();
 }
 
@@ -336,14 +336,17 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
                 .unwrap();
 
             let out_product = &product_request.product_description;
-            assert_eq!(out_product.name, in_product.name);
-            assert_eq!(out_product.id, in_product.id);
-            assert_eq!(out_product.portion, in_product.portion);
-            assert_eq!(out_product.producer, in_product.producer);
-            assert_eq!(out_product.quantity_type, in_product.quantity_type);
+            assert_eq!(out_product.info.name, in_product.info.name);
+            assert_eq!(out_product.info.id, in_product.info.id);
+            assert_eq!(out_product.info.portion, in_product.info.portion);
+            assert_eq!(out_product.info.producer, in_product.info.producer);
             assert_eq!(
-                out_product.volume_weight_ratio,
-                in_product.volume_weight_ratio
+                out_product.info.quantity_type,
+                in_product.info.quantity_type
+            );
+            assert_eq!(
+                out_product.info.volume_weight_ratio,
+                in_product.info.volume_weight_ratio
             );
 
             if with_preview {
@@ -395,14 +398,17 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
         let out_product = &product_request.product_description;
         let in_product = &products[2];
 
-        assert_eq!(out_product.name, in_product.name);
-        assert_eq!(out_product.id, in_product.id);
-        assert_eq!(out_product.portion, in_product.portion);
-        assert_eq!(out_product.producer, in_product.producer);
-        assert_eq!(out_product.quantity_type, in_product.quantity_type);
+        assert_eq!(out_product.info.name, in_product.info.name);
+        assert_eq!(out_product.info.id, in_product.info.id);
+        assert_eq!(out_product.info.portion, in_product.info.portion);
+        assert_eq!(out_product.info.producer, in_product.info.producer);
         assert_eq!(
-            out_product.volume_weight_ratio,
-            in_product.volume_weight_ratio
+            out_product.info.quantity_type,
+            in_product.info.quantity_type
+        );
+        assert_eq!(
+            out_product.info.volume_weight_ratio,
+            in_product.info.volume_weight_ratio
         );
 
         if with_preview {
@@ -428,7 +434,7 @@ async fn product_tests<B: DataBackend>(backend: &B) {
 
     // add the products in the list
     for product_desc in products.iter() {
-        info!("Added product with id: {}", product_desc.id);
+        info!("Added product with id: {}", product_desc.info.id);
         assert!(backend.new_product(product_desc).await.unwrap());
     }
     info!("New products added");
@@ -437,27 +443,32 @@ async fn product_tests<B: DataBackend>(backend: &B) {
     for with_preview in [true, false] {
         for in_product in products.iter() {
             let out_product = backend
-                .get_product(&in_product.id, with_preview)
+                .get_product(&in_product.info.id, with_preview)
                 .await
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(out_product.name, in_product.name);
-            assert_eq!(out_product.id, in_product.id);
-            assert_eq!(out_product.portion, in_product.portion);
-            assert_eq!(out_product.producer, in_product.producer);
-            assert_eq!(out_product.quantity_type, in_product.quantity_type);
+            assert_eq!(out_product.info.name, in_product.info.name);
+            assert_eq!(out_product.info.id, in_product.info.id);
+            assert_eq!(out_product.info.portion, in_product.info.portion);
+            assert_eq!(out_product.info.producer, in_product.info.producer);
             assert_eq!(
-                out_product.volume_weight_ratio,
-                in_product.volume_weight_ratio
+                out_product.info.quantity_type,
+                in_product.info.quantity_type
+            );
+            assert_eq!(
+                out_product.info.volume_weight_ratio,
+                in_product.info.volume_weight_ratio
             );
 
             if with_preview {
                 assert_eq!(out_product.preview, in_product.preview);
 
                 // if the preview flag is set, we also test getting the full image of the product
-                let full_image: Option<ProductImage> =
-                    backend.get_product_image(&in_product.id).await.unwrap();
+                let full_image: Option<ProductImage> = backend
+                    .get_product_image(&in_product.info.id)
+                    .await
+                    .unwrap();
                 assert_eq!(full_image, in_product.full_image);
             }
 
@@ -471,56 +482,73 @@ async fn product_tests<B: DataBackend>(backend: &B) {
     }
 
     // delete the first 2 products
-    backend.delete_product(&products[0].id).await.unwrap();
-    backend.delete_product(&products[1].id).await.unwrap();
+    backend.delete_product(&products[0].info.id).await.unwrap();
+    backend.delete_product(&products[1].info.id).await.unwrap();
 
     assert_eq!(
-        backend.get_product(&products[0].id, true).await.unwrap(),
+        backend
+            .get_product(&products[0].info.id, true)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        backend.get_product(&products[1].id, true).await.unwrap(),
+        backend
+            .get_product(&products[1].info.id, true)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        backend.get_product(&products[0].id, false).await.unwrap(),
+        backend
+            .get_product(&products[0].info.id, false)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        backend.get_product(&products[1].id, false).await.unwrap(),
+        backend
+            .get_product(&products[1].info.id, false)
+            .await
+            .unwrap(),
         None
     );
 
     // delete the first 2 products again ... nothing should happen
-    backend.delete_product(&products[0].id).await.unwrap();
-    backend.delete_product(&products[1].id).await.unwrap();
+    backend.delete_product(&products[0].info.id).await.unwrap();
+    backend.delete_product(&products[1].info.id).await.unwrap();
 
     // check that the last added product is still there
     for with_preview in [true, false] {
         let in_product = &products[2];
 
         let out_product = backend
-            .get_product(&in_product.id, with_preview)
+            .get_product(&in_product.info.id, with_preview)
             .await
             .unwrap()
             .unwrap();
 
-        assert_eq!(out_product.name, in_product.name);
-        assert_eq!(out_product.id, in_product.id);
-        assert_eq!(out_product.portion, in_product.portion);
-        assert_eq!(out_product.producer, in_product.producer);
-        assert_eq!(out_product.quantity_type, in_product.quantity_type);
+        assert_eq!(out_product.info.name, in_product.info.name);
+        assert_eq!(out_product.info.id, in_product.info.id);
+        assert_eq!(out_product.info.portion, in_product.info.portion);
+        assert_eq!(out_product.info.producer, in_product.info.producer);
         assert_eq!(
-            out_product.volume_weight_ratio,
-            in_product.volume_weight_ratio
+            out_product.info.quantity_type,
+            in_product.info.quantity_type
+        );
+        assert_eq!(
+            out_product.info.volume_weight_ratio,
+            in_product.info.volume_weight_ratio
         );
 
         if with_preview {
             assert_eq!(out_product.preview, in_product.preview);
 
             // if the preview flag is set, we also test getting the full image of the product
-            let full_image: Option<ProductImage> =
-                backend.get_product_image(&in_product.id).await.unwrap();
+            let full_image: Option<ProductImage> = backend
+                .get_product_image(&in_product.info.id)
+                .await
+                .unwrap();
             assert_eq!(full_image, in_product.full_image);
         }
 
