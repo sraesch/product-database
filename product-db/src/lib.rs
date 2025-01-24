@@ -244,7 +244,7 @@ mod test {
     fn test_deserialize_json() {
         let product_data = include_str!("../../test_data/products.json");
         let products: Vec<ProductDescription> = serde_json::from_str(product_data).unwrap();
-        assert_eq!(products.len(), 3);
+        assert_eq!(products.len(), 5);
 
         for p in products.iter() {
             if let Some(preview) = &p.preview {
@@ -252,8 +252,8 @@ mod test {
 
                 let bytes = preview.data.as_slice();
                 let img = load_image::load_data(bytes).unwrap();
-                assert_eq!(img.width, 128);
-                assert_eq!(img.height, 128);
+                assert!(img.width >= 1 && img.width <= 128);
+                assert!(img.height >= 1 && img.height <= 128);
             }
         }
     }

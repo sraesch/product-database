@@ -628,6 +628,8 @@ impl DataBackend for PostgresBackend {
         query: &ProductQuery,
         with_preview: bool,
     ) -> ProductDBResult<Vec<(DBId, ProductDescription)>> {
+        debug!("Query product requests: {:?}", query);
+
         unimplemented!()
     }
 
