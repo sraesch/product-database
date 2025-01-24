@@ -337,29 +337,14 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
                 .unwrap();
 
             let out_product = &product_request.product_description;
-            assert_eq!(out_product.info.name, in_product.info.name);
-            assert_eq!(out_product.info.id, in_product.info.id);
-            assert_eq!(out_product.info.portion, in_product.info.portion);
-            assert_eq!(out_product.info.producer, in_product.info.producer);
-            assert_eq!(
-                out_product.info.quantity_type,
-                in_product.info.quantity_type
-            );
-            assert_eq!(
-                out_product.info.volume_weight_ratio,
-                in_product.info.volume_weight_ratio
-            );
+            compare_product_description(out_product, in_product, with_preview);
 
             if with_preview {
-                assert_eq!(out_product.preview, in_product.preview);
-
                 // if the preview flag is set, we also test getting the full image of the product
                 let full_image: Option<ProductImage> =
                     backend.get_product_request_image(*id).await.unwrap();
                 assert_eq!(full_image, in_product.full_image);
             }
-
-            check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
         }
     }
 
@@ -399,29 +384,41 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
         let out_product = &product_request.product_description;
         let in_product = &products[2];
 
-        assert_eq!(out_product.info.name, in_product.info.name);
-        assert_eq!(out_product.info.id, in_product.info.id);
-        assert_eq!(out_product.info.portion, in_product.info.portion);
-        assert_eq!(out_product.info.producer, in_product.info.producer);
-        assert_eq!(
-            out_product.info.quantity_type,
-            in_product.info.quantity_type
-        );
-        assert_eq!(
-            out_product.info.volume_weight_ratio,
-            in_product.info.volume_weight_ratio
-        );
-
+        compare_product_description(out_product, in_product, with_preview);
         if with_preview {
-            assert_eq!(out_product.preview, in_product.preview);
-
             // if the preview flag is set, we also test getting the full image of the product
             let full_image: Option<ProductImage> =
                 backend.get_product_request_image(ids[2]).await.unwrap();
             assert_eq!(full_image, in_product.full_image);
         }
+    }
+}
 
-        check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
+/// Compares the product info of two products.
+/// Asserts that the product info is the same.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+fn compare_product_info(lhs: &ProductDescription, rhs: &ProductDescription) {
+    assert_eq!(lhs.info.name, rhs.info.name);
+    assert_eq!(lhs.info.id, rhs.info.id);
+    assert_eq!(lhs.info.portion, rhs.info.portion);
+    assert_eq!(lhs.info.producer, rhs.info.producer);
+    assert_eq!(lhs.info.quantity_type, rhs.info.quantity_type);
+    assert_eq!(lhs.info.volume_weight_ratio, rhs.info.volume_weight_ratio);
+}
+
+fn compare_product_description(
+    lhs: &ProductDescription,
+    rhs: &ProductDescription,
+    check_preview: bool,
+) {
+    compare_product_info(lhs, rhs);
+    check_compare_nutrients(&lhs.nutrients, &rhs.nutrients);
+
+    if check_preview {
+        assert_eq!(lhs.preview, rhs.preview);
     }
 }
 
@@ -449,22 +446,9 @@ async fn product_tests<B: DataBackend>(backend: &B) {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(out_product.info.name, in_product.info.name);
-            assert_eq!(out_product.info.id, in_product.info.id);
-            assert_eq!(out_product.info.portion, in_product.info.portion);
-            assert_eq!(out_product.info.producer, in_product.info.producer);
-            assert_eq!(
-                out_product.info.quantity_type,
-                in_product.info.quantity_type
-            );
-            assert_eq!(
-                out_product.info.volume_weight_ratio,
-                in_product.info.volume_weight_ratio
-            );
+            compare_product_description(&out_product, in_product, with_preview);
 
             if with_preview {
-                assert_eq!(out_product.preview, in_product.preview);
-
                 // if the preview flag is set, we also test getting the full image of the product
                 let full_image: Option<ProductImage> = backend
                     .get_product_image(&in_product.info.id)
@@ -472,8 +456,6 @@ async fn product_tests<B: DataBackend>(backend: &B) {
                     .unwrap();
                 assert_eq!(full_image, in_product.full_image);
             }
-
-            check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
         }
     }
 
@@ -532,22 +514,9 @@ async fn product_tests<B: DataBackend>(backend: &B) {
             .unwrap()
             .unwrap();
 
-        assert_eq!(out_product.info.name, in_product.info.name);
-        assert_eq!(out_product.info.id, in_product.info.id);
-        assert_eq!(out_product.info.portion, in_product.info.portion);
-        assert_eq!(out_product.info.producer, in_product.info.producer);
-        assert_eq!(
-            out_product.info.quantity_type,
-            in_product.info.quantity_type
-        );
-        assert_eq!(
-            out_product.info.volume_weight_ratio,
-            in_product.info.volume_weight_ratio
-        );
+        compare_product_description(&out_product, in_product, with_preview);
 
         if with_preview {
-            assert_eq!(out_product.preview, in_product.preview);
-
             // if the preview flag is set, we also test getting the full image of the product
             let full_image: Option<ProductImage> = backend
                 .get_product_image(&in_product.info.id)
@@ -555,8 +524,6 @@ async fn product_tests<B: DataBackend>(backend: &B) {
                 .unwrap();
             assert_eq!(full_image, in_product.full_image);
         }
-
-        check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
     }
 }
 
