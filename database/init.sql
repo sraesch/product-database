@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS nutrients(
     carbohydrates_grams real, -- The amount of carbohydrates in the product in grams
     sugar_grams real, -- The amount of sugar in the product in grams
     salt_grams real, -- The amount of salt in the product in grams
-    vitaminA_mg real, -- The amount of vitamin A in the product in milligrams
-    vitaminC_mg real, -- The amount of vitamin C in the product in milligrams
-    vitaminD_Mg real, -- The amount of vitamin D in the product in micrograms
+    vitamin_a_mg real, -- The amount of vitamin A in the product in milligrams
+    vitamin_c_mg real, -- The amount of vitamin C in the product in milligrams
+    vitamin_d_mug real, -- The amount of vitamin D in the product in micrograms
     iron_mg real, -- The amount of iron in the product in milligrams
     calcium_mg real, -- The amount of calcium in the product in milligrams
     magnesium_mg real, -- The amount of magnesium in the product in milligrams
@@ -116,9 +116,9 @@ SELECT
     n.carbohydrates_grams,
     n.sugar_grams,
     n.salt_grams,
-    n.vitaminA_mg,
-    n.vitaminC_mg,
-    n.vitaminD_Mg,
+    n.vitamin_a_mg,
+    n.vitamin_c_mg,
+    n.vitamin_d_mug,
     n.iron_mg,
     n.calcium_mg,
     n.magnesium_mg,
@@ -149,9 +149,9 @@ SELECT
     n.carbohydrates_grams,
     n.sugar_grams,
     n.salt_grams,
-    n.vitaminA_mg,
-    n.vitaminC_mg,
-    n.vitaminD_Mg,
+    n.vitamin_a_mg,
+    n.vitamin_c_mg,
+    n.vitamin_d_mug,
     n.iron_mg,
     n.calcium_mg,
     n.magnesium_mg,
@@ -180,9 +180,9 @@ SELECT
     n.carbohydrates_grams,
     n.sugar_grams,
     n.salt_grams,
-    n.vitaminA_mg,
-    n.vitaminC_mg,
-    n.vitaminD_Mg,
+    n.vitamin_a_mg,
+    n.vitamin_c_mg,
+    n.vitamin_d_mug,
     n.iron_mg,
     n.calcium_mg,
     n.magnesium_mg,
@@ -211,9 +211,9 @@ SELECT
     n.carbohydrates_grams,
     n.sugar_grams,
     n.salt_grams,
-    n.vitaminA_mg,
-    n.vitaminC_mg,
-    n.vitaminD_Mg,
+    n.vitamin_a_mg,
+    n.vitamin_c_mg,
+    n.vitamin_d_mug,
     n.iron_mg,
     n.calcium_mg,
     n.magnesium_mg,

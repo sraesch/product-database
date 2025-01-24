@@ -7,7 +7,8 @@ use dockertest::{
 use log::info;
 use product_db::{
     DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductImage, ProductRequest, Secret, SortingOrder, Weight,
+    ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest, Secret,
+    SortingOrder, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -253,7 +254,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
         "foobar_products: {:?}",
         foobar_products
     );
-    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
 
     // delete the first reported missing product
     backend
@@ -273,7 +274,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
         .unwrap();
 
     assert_eq!(foobar_products.len(), 2);
-    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
 
     // delete the first reported missing product again ... nothing should happen
     backend
@@ -293,7 +294,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
         .unwrap();
 
     assert_eq!(foobar_products.len(), 2);
-    assert!(foobar_products.iter().all(|p| p.1.id == "foobar"));
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
 }
 
 /// Runs the product requests tests with the given backend.
@@ -476,6 +477,9 @@ async fn product_tests<B: DataBackend>(backend: &B) {
         }
     }
 
+    // execute the querying products tests
+    query_products_tests(backend, products.as_slice()).await;
+
     // add the products in the list again ... we should get false for all of them
     for product_desc in products.iter() {
         assert!(!backend.new_product(product_desc).await.unwrap());
@@ -554,6 +558,43 @@ async fn product_tests<B: DataBackend>(backend: &B) {
 
         check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
     }
+}
+
+/// Runs the query products tests with the given backend.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+/// - `products` - The products to query.
+async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDescription]) {
+    info!("Querying products tests...");
+
+    // TODO: Remove the following line
+    return;
+
+    // query all products and collect the product ids
+    let product_ids: Vec<ProductID> = backend
+        .query_products(
+            &ProductQuery {
+                limit: 40,
+                offset: 0,
+                search: None,
+                sorting: None,
+            },
+            false,
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| p.info.id)
+        .collect();
+    // make sure the product ids are unique
+    assert_eq!(
+        product_ids.len(),
+        product_ids.iter().collect::<HashSet<_>>().len()
+    );
+    assert_eq!(product_ids.len(), products.len());
+
+    info!("Querying products tests...SUCCESS");
 }
 
 /// Runs the backend tests with the given backend.

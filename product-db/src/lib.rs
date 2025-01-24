@@ -3,6 +3,7 @@ mod error;
 mod options;
 mod postgres;
 mod secret;
+mod sql_types;
 
 use std::fmt::Display;
 
@@ -65,7 +66,7 @@ pub struct ProductInfo {
 
 /// A image of the product. Can be a preview or full image of the product.
 #[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::FromRow)]
 pub struct ProductImage {
     #[serde(rename = "contentType")]
     /// The content type of the preview image.
@@ -87,10 +88,10 @@ pub struct ProductRequest {
 }
 
 /// A missing product report.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::FromRow)]
 pub struct MissingProduct {
     /// The id of the missing product.
-    pub id: ProductID,
+    pub product_id: ProductID,
 
     /// The date when the product has been reported as missing.
     pub date: DateTime<Utc>,
@@ -216,7 +217,7 @@ impl QuantityInner {
 
 /// The quantity in which the product details are expressed
 #[derive(
-    Debug, sqlx::Type, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash,
+    Debug, sqlx::Type, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
 #[sqlx(type_name = "QuantityType", rename_all = "lowercase")]
 pub enum QuantityType {
