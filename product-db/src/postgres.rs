@@ -7,10 +7,9 @@ use sqlx::{
 };
 
 use crate::{
-    sql_types::{SQLMissingProduct, SQLRequestedProduct},
+    sql_types::{SQLMissingProduct, SQLProductDescription, SQLRequestedProduct},
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductInfo, ProductQuery, ProductRequest, QuantityType,
-    Result as ProductDBResult, Secret, Weight,
+    ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, Secret,
 };
 
 type Pool = sqlx::PgPool;
@@ -372,7 +371,8 @@ impl DataBackend for PostgresBackend {
         kcal, protein_grams, fat_grams, carbohydrates_grams,
         sugar_grams, salt_grams,
         vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
+        null as preview, null as preview_content_type
         from products_full where product_id = $1;"
         } else {
             "select
@@ -385,132 +385,47 @@ impl DataBackend for PostgresBackend {
         from products_full_with_preview where product_id = $1;"
         };
 
-        let query = sqlx::query(query_str).bind(id);
+        let query = sqlx::query_as::<_, SQLProductDescription>(query_str).bind(id);
+        let row = query.fetch_optional(&self.pool).await.map_err(|e| {
+            error!("Failed to get product request: {}", e);
+            Error::DBError(Box::new(e))
+        })?;
 
-        let row = match self.pool.fetch_optional(query).await {
-            Ok(row) => row,
-            Err(e) => {
-                error!("Failed to get product {}: {}", id, e);
-                return Err(Error::DBError(Box::new(e)));
-            }
-        };
-
-        if let Some(row) = row {
-            let product_id: ProductID = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
-            let name: String = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
-            let producer: Option<String> =
-                row.try_get(2).map_err(|e| Error::DBError(Box::new(e)))?;
-            let quantity_type: QuantityType =
-                row.try_get(3).map_err(|e| Error::DBError(Box::new(e)))?;
-            let portion: f32 = row.try_get(4).map_err(|e| Error::DBError(Box::new(e)))?;
-            let volume_weight_ratio: Option<f32> =
-                row.try_get(5).map_err(|e| Error::DBError(Box::new(e)))?;
-            let kcal: f32 = row.try_get(6).map_err(|e| Error::DBError(Box::new(e)))?;
-            let protein_grams: Option<f32> =
-                row.try_get(7).map_err(|e| Error::DBError(Box::new(e)))?;
-            let fat_grams: Option<f32> = row.try_get(8).map_err(|e| Error::DBError(Box::new(e)))?;
-            let carbohydrates_grams: Option<f32> =
-                row.try_get(9).map_err(|e| Error::DBError(Box::new(e)))?;
-            let sugar_grams: Option<f32> =
-                row.try_get(10).map_err(|e| Error::DBError(Box::new(e)))?;
-            let salt_grams: Option<f32> =
-                row.try_get(11).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitamin_a_mg: Option<f32> =
-                row.try_get(12).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitamin_c_mg: Option<f32> =
-                row.try_get(13).map_err(|e| Error::DBError(Box::new(e)))?;
-            let vitamin_d_μg: Option<f32> =
-                row.try_get(14).map_err(|e| Error::DBError(Box::new(e)))?;
-            let iron_mg: Option<f32> = row.try_get(15).map_err(|e| Error::DBError(Box::new(e)))?;
-            let calcium_mg: Option<f32> =
-                row.try_get(16).map_err(|e| Error::DBError(Box::new(e)))?;
-            let magnesium_mg: Option<f32> =
-                row.try_get(17).map_err(|e| Error::DBError(Box::new(e)))?;
-            let sodium_mg: Option<f32> =
-                row.try_get(18).map_err(|e| Error::DBError(Box::new(e)))?;
-            let zinc_mg: Option<f32> = row.try_get(19).map_err(|e| Error::DBError(Box::new(e)))?;
-
-            let preview: Option<ProductImage> = if !with_preview {
-                trace!("Skip preview image decoding for product with id: {}", id);
-                None
-            } else {
-                trace!("Decode preview image for product with id: {}", id);
-
-                let preview_data: Option<Vec<u8>> =
-                    row.try_get(20).map_err(|e| Error::DBError(Box::new(e)))?;
-                let content_type: Option<String> =
-                    row.try_get(21).map_err(|e| Error::DBError(Box::new(e)))?;
-
-                trace!(
-                    "Decoded preview image for product with id: {}, Length={}, content-type={}",
-                    id,
-                    preview_data.as_ref().map(|d| d.len()).unwrap_or_default(),
-                    content_type.as_deref().unwrap_or_default()
-                );
-
-                preview_data.map(|preview_data| ProductImage {
-                    content_type: content_type.unwrap_or_default(),
-                    data: preview_data,
-                })
-            };
-
-            Ok(Some(ProductDescription {
-                info: ProductInfo {
-                    id: product_id,
-                    name,
-                    producer,
-                    quantity_type,
-                    portion,
-                    volume_weight_ratio,
-                },
-                preview,
-                full_image: None,
-                nutrients: Nutrients {
-                    kcal,
-                    protein: protein_grams.map(Weight::new_from_gram),
-                    fat: fat_grams.map(Weight::new_from_gram),
-                    carbohydrates: carbohydrates_grams.map(Weight::new_from_gram),
-                    sugar: sugar_grams.map(Weight::new_from_gram),
-                    salt: salt_grams.map(Weight::new_from_gram),
-                    vitamin_a: vitamin_a_mg.map(Weight::new_from_milligram),
-                    vitamin_c: vitamin_c_mg.map(Weight::new_from_milligram),
-                    vitamin_d: vitamin_d_μg.map(Weight::new_from_microgram),
-                    iron: iron_mg.map(Weight::new_from_milligram),
-                    calcium: calcium_mg.map(Weight::new_from_milligram),
-                    magnesium: magnesium_mg.map(Weight::new_from_milligram),
-                    sodium: sodium_mg.map(Weight::new_from_milligram),
-                    zinc: zinc_mg.map(Weight::new_from_milligram),
-                },
-            }))
-        } else {
-            debug!("No product with id: {}", id);
-            Ok(None)
+        if row.is_none() {
+            debug!("No product request with id: {}", id);
         }
+
+        Ok(row.map(|r| {
+            if !with_preview {
+                trace!(
+                    "Skip preview image decoding for product request with id: {}",
+                    id
+                );
+            }
+
+            let request: ProductDescription = r.into();
+
+            request
+        }))
     }
 
     async fn get_product_image(&self, id: &ProductID) -> ProductDBResult<Option<ProductImage>> {
         debug!("Get product image for product id: {}", id);
 
         let query =
-            sqlx::query("select pi.content_type, pi.data from product_image pi join product_description p on p.photo = pi.id where p.product_id = $1;")
+            sqlx::query_as::<_, ProductImage>("select pi.content_type, pi.data from product_image pi join product_description p on p.photo = pi.id where p.product_id = $1;")
                 .bind(id);
-        let row = match self.pool.fetch_optional(query).await {
-            Ok(row) => row,
-            Err(e) => {
-                error!("Failed to get product image for id={}: {}", id, e);
-                return Err(Error::DBError(Box::new(e)));
-            }
-        };
 
-        if let Some(row) = row {
-            let content_type: String = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
-            let data: Vec<u8> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+        let row = query.fetch_optional(&self.pool).await.map_err(|e| {
+            error!("Failed to get product image for id={}: {}", id, e);
+            Error::DBError(Box::new(e))
+        })?;
 
-            Ok(Some(ProductImage { content_type, data }))
-        } else {
+        if row.is_none() {
             debug!("No product image with id: {}", id);
-            Ok(None)
         }
+
+        Ok(row)
     }
 
     async fn delete_product(&self, id: &ProductID) -> ProductDBResult<()> {
@@ -699,7 +614,7 @@ impl PostgresBackend {
         .bind(&desc.info.id)
         .bind(&desc.info.name)
         .bind(&desc.info.producer)
-        .bind(&desc.info.quantity_type)
+        .bind(desc.info.quantity_type)
         .bind(desc.info.portion)
         .bind(desc.info.volume_weight_ratio)
         .bind(preview)

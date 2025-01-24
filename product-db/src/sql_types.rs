@@ -4,6 +4,7 @@ use crate::{
 };
 
 use chrono::{DateTime, Utc};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 /// A missing product report.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -32,9 +33,8 @@ impl From<SQLMissingProduct> for (DBId, MissingProduct) {
 
 /// A product request
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
-pub struct SQLRequestedProduct {
+pub struct SQLProductDescription {
     pub product_id: ProductID,
-    pub date: DateTime<Utc>,
     pub name: String,
     pub producer: Option<String>,
     pub quantity_type: QuantityType,
@@ -59,8 +59,24 @@ pub struct SQLRequestedProduct {
     pub preview_content_type: Option<String>,
 }
 
-impl From<&SQLRequestedProduct> for Nutrients {
-    fn from(r: &SQLRequestedProduct) -> Self {
+/// A product request
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLRequestedProduct {
+    pub desc: SQLProductDescription,
+    pub date: DateTime<Utc>,
+}
+
+impl FromRow<'_, PgRow> for SQLRequestedProduct {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            desc: SQLProductDescription::from_row(row)?,
+            date: row.try_get("date")?,
+        })
+    }
+}
+
+impl From<&SQLProductDescription> for Nutrients {
+    fn from(r: &SQLProductDescription) -> Self {
         Self {
             kcal: r.kcal,
             protein: r.protein_grams.map(Weight::new_from_gram),
@@ -80,8 +96,8 @@ impl From<&SQLRequestedProduct> for Nutrients {
     }
 }
 
-impl From<SQLRequestedProduct> for ProductInfo {
-    fn from(r: SQLRequestedProduct) -> Self {
+impl From<SQLProductDescription> for ProductInfo {
+    fn from(r: SQLProductDescription) -> Self {
         Self {
             id: r.product_id,
             name: r.name,
@@ -93,8 +109,8 @@ impl From<SQLRequestedProduct> for ProductInfo {
     }
 }
 
-impl From<SQLRequestedProduct> for (Option<ProductImage>, ProductInfo) {
-    fn from(r: SQLRequestedProduct) -> Self {
+impl From<SQLProductDescription> for (Option<ProductImage>, ProductInfo) {
+    fn from(r: SQLProductDescription) -> Self {
         let preview = r.preview.map(|p| ProductImage {
             data: p,
             content_type: r.preview_content_type.unwrap(),
@@ -114,8 +130,8 @@ impl From<SQLRequestedProduct> for (Option<ProductImage>, ProductInfo) {
     }
 }
 
-impl From<SQLRequestedProduct> for ProductDescription {
-    fn from(r: SQLRequestedProduct) -> Self {
+impl From<SQLProductDescription> for ProductDescription {
+    fn from(r: SQLProductDescription) -> Self {
         let nutrients = (&r).into();
         let (preview, info) = r.into();
 
@@ -132,7 +148,7 @@ impl From<SQLRequestedProduct> for ProductRequest {
     fn from(r: SQLRequestedProduct) -> Self {
         Self {
             date: r.date,
-            product_description: r.into(),
+            product_description: r.desc.into(),
         }
     }
 }
