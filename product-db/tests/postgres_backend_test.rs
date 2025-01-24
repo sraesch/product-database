@@ -7,7 +7,7 @@ use dockertest::{
 use log::info;
 use product_db::{
     DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductImage, ProductRequest, Secret, Weight,
+    ProductDescription, ProductImage, ProductRequest, Secret, SortingOrder, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -172,7 +172,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 40,
             offset: 0,
             product_id: None,
-            sort_asc: true,
+            order: SortingOrder::Ascending,
         })
         .await
         .unwrap();
@@ -198,7 +198,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 40,
             offset: 0,
             product_id: None,
-            sort_asc: false,
+            order: SortingOrder::Descending,
         })
         .await
         .unwrap();
@@ -222,7 +222,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 2,
             offset: 2,
             product_id: None,
-            sort_asc: true,
+            order: SortingOrder::Ascending,
         })
         .await
         .unwrap();
@@ -242,7 +242,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 40,
             offset: 0,
             product_id: Some("foobar".to_string()),
-            sort_asc: false,
+            order: SortingOrder::Descending,
         })
         .await
         .unwrap();
@@ -267,7 +267,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 40,
             offset: 0,
             product_id: Some("foobar".to_string()),
-            sort_asc: false,
+            order: SortingOrder::Descending,
         })
         .await
         .unwrap();
@@ -287,7 +287,7 @@ async fn missing_product_tests<B: DataBackend>(backend: &B) {
             limit: 40,
             offset: 0,
             product_id: Some("foobar".to_string()),
-            sort_asc: false,
+            order: SortingOrder::Descending,
         })
         .await
         .unwrap();

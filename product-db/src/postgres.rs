@@ -106,7 +106,7 @@ impl DataBackend for PostgresBackend {
         &self,
         query: &MissingProductQuery,
     ) -> ProductDBResult<Vec<(DBId, MissingProduct)>> {
-        let sorting_order = if query.sort_asc { "asc" } else { "desc" };
+        let sorting_order = query.order.to_string();
 
         let mut _q: String = String::new();
         let query = if let Some(product_id) = query.product_id.as_ref() {

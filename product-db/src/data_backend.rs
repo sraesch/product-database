@@ -1,10 +1,32 @@
-use std::future::Future;
+use std::{
+    fmt::{self, Display, Formatter},
+    future::Future,
+};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
 
 pub type DBId = i32;
+
+/// The sorting order for the query results.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum SortingOrder {
+    #[serde(rename = "asc")]
+    Ascending,
+
+    #[serde(rename = "desc")]
+    Descending,
+}
+
+impl Display for SortingOrder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SortingOrder::Ascending => write!(f, "ASC"),
+            SortingOrder::Descending => write!(f, "DESC"),
+        }
+    }
+}
 
 /// The query parameters for querying the missing products.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -16,7 +38,8 @@ pub struct MissingProductQuery {
     /// The product id to filter the results for (optional).
     pub product_id: Option<ProductID>,
     /// If the results are in ascending or descending order of the reported date.
-    pub sort_asc: bool,
+    pub order: SortingOrder,
+}
 }
 
 pub trait DataBackend: Send + Sync {
