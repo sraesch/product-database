@@ -19,32 +19,18 @@ pub use secret::*;
 /// The id of a single product
 pub type ProductID = String;
 
-/// The product info details.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductInfo {
-    /// The id of the product.
-    /// Can be EAN, GTIN, or any other unique identifier.
+/// The description of a product.
+/// This is the full information about a product consisting of the product id, name, producer,
+/// nutrients, and images.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductDescription {
+    /// The id of the product. Can be EAN, GTIN, or any other unique identifier.
     pub id: ProductID,
 
     /// The name of the product.
     pub name: String,
 
     /// The company that produces the product.
-    pub producer: Option<String>,
-
-    /// The preview image of the product.
-    pub preview: Option<ProductImage>,
-
-    /// The nutrients of the product.
-    pub nutrients: Nutrients,
-}
-
-/// The description of a product.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProductDescription {
-    pub id: ProductID,
-
-    pub name: String,
     pub producer: Option<String>,
 
     /// The quantity type is either weight or volume.
@@ -250,7 +236,7 @@ mod test {
     #[test]
     fn test_deserialize_json() {
         let product_data = include_str!("../../test_data/products.json");
-        let products: Vec<ProductInfo> = serde_json::from_str(product_data).unwrap();
+        let products: Vec<ProductDescription> = serde_json::from_str(product_data).unwrap();
         assert_eq!(products.len(), 3);
 
         for p in products.iter() {

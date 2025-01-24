@@ -2,7 +2,7 @@ use std::future::Future;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{MissingProduct, ProductID, ProductImage, ProductRequest, Result};
+use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
 
 pub type DBId = i32;
 
@@ -64,7 +64,7 @@ pub trait DataBackend: Send + Sync {
 
     /// Retrieves the details about the product request with the given id.
     /// Returns `None` if the product request does not exist.
-    /// Note: The photo of the product is not included in the response by default.
+    /// Note: The photo of the product is not included in the response.
     ///
     /// # Arguments
     /// - `id` - The internal id of the requested product
@@ -89,4 +89,42 @@ pub trait DataBackend: Send + Sync {
     /// # Arguments
     /// - `id` - The internal id of the requested product
     fn delete_requested_product(&self, id: DBId) -> impl Future<Output = Result<()>> + Send;
+
+    /// Adds a new product to the database and returns true on success and false if for example
+    /// the product already exists.
+    ///
+    /// # Arguments
+    /// - `product_info` - The information about the product to be added.
+    fn new_product(
+        &self,
+        product_info: &ProductDescription,
+    ) -> impl Future<Output = Result<bool>> + Send;
+
+    /// Retrieves the details about the product with the given id.
+    /// Returns `None` if the product does not exist.
+    /// Note: The photo of the product is not included in the response.
+    ///
+    /// # Arguments
+    /// - `id` - The public id of the product
+    /// - `with_preview` - Whether to include the preview photo of the product in the response
+    fn get_product(
+        &self,
+        id: &ProductID,
+        with_preview: bool,
+    ) -> impl Future<Output = Result<Option<ProductDescription>>> + Send;
+
+    /// Retrieves the full product image related to the given product id.
+    ///
+    /// # Arguments
+    /// - `id` - The public id of the product.
+    fn get_product_image(
+        &self,
+        id: &ProductID,
+    ) -> impl Future<Output = Result<Option<ProductImage>>> + Send;
+
+    /// Deletes the product from the database.
+    ///
+    /// # Arguments
+    /// - `id` - The public id of the product.
+    fn delete_product(&self, id: &ProductID) -> impl Future<Output = Result<()>> + Send;
 }

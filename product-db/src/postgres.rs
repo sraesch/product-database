@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
 use sqlx::{
+    error::DatabaseError,
     postgres::{PgConnectOptions, PgPoolOptions},
     ConnectOptions, Executor, Row,
 };
@@ -358,13 +359,17 @@ impl DataBackend for PostgresBackend {
     async fn get_product_request_image(&self, id: DBId) -> ProductDBResult<Option<ProductImage>> {
         debug!("Get product image for product request id: {}", id);
 
-        let query =
-            sqlx::query("select pi.content_type, pi.data from product_image pi join product_description p on p.photo = pi.id where p.id = $1;")
-                .bind(id);
+        let query = sqlx::query(
+            "select content_type, data from requested_products_full_image where r_id = $1;",
+        )
+        .bind(id);
         let row = match self.pool.fetch_optional(query).await {
             Ok(row) => row,
             Err(e) => {
-                error!("Failed to get missing product: {}", e);
+                error!(
+                    "Failed to get product image for product request {}: {}",
+                    id, e
+                );
                 return Err(Error::DBError(Box::new(e)));
             }
         };
@@ -391,6 +396,218 @@ impl DataBackend for PostgresBackend {
         }
 
         info!("Deleted requested product with id: {}", id);
+
+        Ok(())
+    }
+
+    async fn new_product(&self, product_info: &ProductDescription) -> ProductDBResult<bool> {
+        info!("New product with id: {}", product_info.id);
+
+        // create the product description entry
+        let product_desc_id = self.create_product_description(product_info).await?;
+
+        // insert the product into the products table
+        let q = sqlx::query(
+            "insert into products (product_description_id, product_id) values ($1, $2);",
+        )
+        .bind(product_desc_id)
+        .bind(&product_info.id);
+
+        if let Err(err) = self.pool.execute(q).await {
+            if let sqlx::Error::Database(ref db_err) = err {
+                if db_err.is_unique_violation() {
+                    info!(
+                        "Product with id {} already exists in the database",
+                        product_info.id
+                    );
+
+                    // we need to cleanup the created product description entry
+                    let q = sqlx::query("delete from product_description where id = $1;")
+                        .bind(product_desc_id);
+                    if let Err(err) = self.pool.execute(q).await {
+                        error!("Failed to delete requested product: {}", err);
+                        return Err(Error::DBError(Box::new(err)));
+                    }
+
+                    return Ok(false);
+                } else {
+                    error!("Failed to add product with id {}: {}", product_info.id, err);
+                    return Err(Error::DBError(Box::new(err)));
+                }
+            } else {
+                error!("Failed to add product with id {}: {}", product_info.id, err);
+                return Err(Error::DBError(Box::new(err)));
+            }
+        }
+
+        info!("New product {} added", product_info.id);
+
+        Ok(true)
+    }
+
+    async fn get_product(
+        &self,
+        id: &ProductID,
+        with_preview: bool,
+    ) -> ProductDBResult<Option<ProductDescription>> {
+        debug!("Get product with id: {} [Preview={}]", id, with_preview);
+
+        let query_str = if !with_preview {
+            "select
+        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitaminA_mg, vitaminC_mg, vitaminD_Mg,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg
+        from products_full where product_id = $1;"
+        } else {
+            "select
+        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitaminA_mg, vitaminC_mg, vitaminD_Mg,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
+        preview, preview_content_type
+        from products_full_with_preview where product_id = $1;"
+        };
+
+        let query = sqlx::query(query_str).bind(id);
+
+        let row = match self.pool.fetch_optional(query).await {
+            Ok(row) => row,
+            Err(e) => {
+                error!("Failed to get product {}: {}", id, e);
+                return Err(Error::DBError(Box::new(e)));
+            }
+        };
+
+        if let Some(row) = row {
+            let product_id: ProductID = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let name: String = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+            let producer: Option<String> =
+                row.try_get(2).map_err(|e| Error::DBError(Box::new(e)))?;
+            let quantity_type: QuantityType =
+                row.try_get(3).map_err(|e| Error::DBError(Box::new(e)))?;
+            let portion: f32 = row.try_get(4).map_err(|e| Error::DBError(Box::new(e)))?;
+            let volume_weight_ratio: Option<f32> =
+                row.try_get(5).map_err(|e| Error::DBError(Box::new(e)))?;
+            let kcal: f32 = row.try_get(6).map_err(|e| Error::DBError(Box::new(e)))?;
+            let protein_grams: Option<f32> =
+                row.try_get(7).map_err(|e| Error::DBError(Box::new(e)))?;
+            let fat_grams: Option<f32> = row.try_get(8).map_err(|e| Error::DBError(Box::new(e)))?;
+            let carbohydrates_grams: Option<f32> =
+                row.try_get(9).map_err(|e| Error::DBError(Box::new(e)))?;
+            let sugar_grams: Option<f32> =
+                row.try_get(10).map_err(|e| Error::DBError(Box::new(e)))?;
+            let salt_grams: Option<f32> =
+                row.try_get(11).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitamin_a_mg: Option<f32> =
+                row.try_get(12).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitamin_c_mg: Option<f32> =
+                row.try_get(13).map_err(|e| Error::DBError(Box::new(e)))?;
+            let vitamin_d_μg: Option<f32> =
+                row.try_get(14).map_err(|e| Error::DBError(Box::new(e)))?;
+            let iron_mg: Option<f32> = row.try_get(15).map_err(|e| Error::DBError(Box::new(e)))?;
+            let calcium_mg: Option<f32> =
+                row.try_get(16).map_err(|e| Error::DBError(Box::new(e)))?;
+            let magnesium_mg: Option<f32> =
+                row.try_get(17).map_err(|e| Error::DBError(Box::new(e)))?;
+            let sodium_mg: Option<f32> =
+                row.try_get(18).map_err(|e| Error::DBError(Box::new(e)))?;
+            let zinc_mg: Option<f32> = row.try_get(19).map_err(|e| Error::DBError(Box::new(e)))?;
+
+            let preview: Option<ProductImage> = if !with_preview {
+                trace!("Skip preview image decoding for product with id: {}", id);
+                None
+            } else {
+                trace!("Decode preview image for product with id: {}", id);
+
+                let preview_data: Option<Vec<u8>> =
+                    row.try_get(20).map_err(|e| Error::DBError(Box::new(e)))?;
+                let content_type: Option<String> =
+                    row.try_get(21).map_err(|e| Error::DBError(Box::new(e)))?;
+
+                trace!(
+                    "Decoded preview image for product with id: {}, Length={}, content-type={}",
+                    id,
+                    preview_data.as_ref().map(|d| d.len()).unwrap_or_default(),
+                    content_type.as_deref().unwrap_or_default()
+                );
+
+                preview_data.map(|preview_data| ProductImage {
+                    content_type: content_type.unwrap_or_default(),
+                    data: preview_data,
+                })
+            };
+
+            Ok(Some(ProductDescription {
+                id: product_id,
+                name,
+                producer,
+                quantity_type,
+                portion,
+                volume_weight_ratio,
+                preview,
+                full_image: None,
+                nutrients: Nutrients {
+                    kcal,
+                    protein: protein_grams.map(Weight::new_from_gram),
+                    fat: fat_grams.map(Weight::new_from_gram),
+                    carbohydrates: carbohydrates_grams.map(Weight::new_from_gram),
+                    sugar: sugar_grams.map(Weight::new_from_gram),
+                    salt: salt_grams.map(Weight::new_from_gram),
+                    vitamin_a: vitamin_a_mg.map(Weight::new_from_milligram),
+                    vitamin_c: vitamin_c_mg.map(Weight::new_from_milligram),
+                    vitamin_d: vitamin_d_μg.map(Weight::new_from_microgram),
+                    iron: iron_mg.map(Weight::new_from_milligram),
+                    calcium: calcium_mg.map(Weight::new_from_milligram),
+                    magnesium: magnesium_mg.map(Weight::new_from_milligram),
+                    sodium: sodium_mg.map(Weight::new_from_milligram),
+                    zinc: zinc_mg.map(Weight::new_from_milligram),
+                },
+            }))
+        } else {
+            debug!("No product with id: {}", id);
+            Ok(None)
+        }
+    }
+
+    async fn get_product_image(&self, id: &ProductID) -> ProductDBResult<Option<ProductImage>> {
+        debug!("Get product image for product id: {}", id);
+
+        let query =
+            sqlx::query("select pi.content_type, pi.data from product_image pi join product_description p on p.photo = pi.id where p.product_id = $1;")
+                .bind(id);
+        let row = match self.pool.fetch_optional(query).await {
+            Ok(row) => row,
+            Err(e) => {
+                error!("Failed to get product image for id={}: {}", id, e);
+                return Err(Error::DBError(Box::new(e)));
+            }
+        };
+
+        if let Some(row) = row {
+            let content_type: String = row.try_get(0).map_err(|e| Error::DBError(Box::new(e)))?;
+            let data: Vec<u8> = row.try_get(1).map_err(|e| Error::DBError(Box::new(e)))?;
+
+            Ok(Some(ProductImage { content_type, data }))
+        } else {
+            debug!("No product image with id: {}", id);
+            Ok(None)
+        }
+    }
+
+    async fn delete_product(&self, id: &ProductID) -> ProductDBResult<()> {
+        info!("Delete product with id: {}", id);
+
+        let q = sqlx::query("delete from products where product_id = $1;").bind(id);
+
+        if let Err(err) = self.pool.execute(q).await {
+            error!("Failed to delete product: {}", err);
+            return Err(Error::DBError(Box::new(err)));
+        }
+
+        info!("Deleted product with id: {}", id);
 
         Ok(())
     }

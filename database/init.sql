@@ -144,6 +144,79 @@ FROM
     JOIN nutrients n ON p.nutrients = n.id
     LEFT JOIN product_image pi ON p.preview = pi.id;
 
+-- Create a view that joins the products with the product description and nutrients
+CREATE VIEW products_full AS
+SELECT
+    r.product_id,
+    p.name,
+    p.producer,
+    p.quantity_type,
+    p.portion,
+    p.volume_weight_ratio,
+    p.preview,
+    p.photo,
+    n.kcal,
+    n.protein_grams,
+    n.fat_grams,
+    n.carbohydrates_grams,
+    n.sugar_grams,
+    n.salt_grams,
+    n.vitaminA_mg,
+    n.vitaminC_mg,
+    n.vitaminD_Mg,
+    n.iron_mg,
+    n.calcium_mg,
+    n.magnesium_mg,
+    n.sodium_mg,
+    n.zinc_mg
+FROM
+    products r
+    JOIN product_description p ON p.id = r.product_description_id
+    JOIN nutrients n ON p.nutrients = n.id;
+
+-- Create a view that joins the products with the product description and nutrients including the preview image
+CREATE VIEW products_full_with_preview AS
+SELECT
+    r.product_id,
+    p.name,
+    p.producer,
+    p.quantity_type,
+    p.portion,
+    p.volume_weight_ratio,
+    pi.data AS preview,
+    pi.content_type AS preview_content_type,
+    p.photo,
+    n.kcal,
+    n.protein_grams,
+    n.fat_grams,
+    n.carbohydrates_grams,
+    n.sugar_grams,
+    n.salt_grams,
+    n.vitaminA_mg,
+    n.vitaminC_mg,
+    n.vitaminD_Mg,
+    n.iron_mg,
+    n.calcium_mg,
+    n.magnesium_mg,
+    n.sodium_mg,
+    n.zinc_mg
+FROM
+    products r
+    JOIN product_description p ON p.id = r.product_description_id
+    JOIN nutrients n ON p.nutrients = n.id
+    LEFT JOIN product_image pi ON p.preview = pi.id;
+
+-- View on full images for the product requests
+CREATE VIEW requested_products_full_image AS
+SELECT
+    r.id AS r_id,
+    pi.data,
+    pi.content_type
+FROM
+    requested_products r
+    JOIN product_description p ON p.id = r.product_description_id
+    JOIN product_image pi ON p.photo = pi.id;
+
 -- Trigger function to delete the product description when a product request is deleted
 CREATE OR REPLACE FUNCTION trigger_func_delete_product_or_requested_product()
     RETURNS TRIGGER

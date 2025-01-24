@@ -117,6 +117,29 @@ fn check_compare_nutrients(lhs: &Nutrients, rhs: &Nutrients) {
     );
 }
 
+/// We do some simple operations s.t. the database is not empty
+/// and in its boring initial state.
+/// Bringing the database in a state where we can run the tests.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+async fn simple_ops<B: DataBackend>(backend: &B) {
+    let products = load_products();
+
+    backend.new_product(&products[0]).await.unwrap();
+    let req_id = backend
+        .request_new_product(&ProductRequest {
+            product_description: products[1].clone(),
+            date: Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    // delete both entries
+    backend.delete_product(&products[0].id).await.unwrap();
+    backend.delete_requested_product(req_id).await.unwrap();
+}
+
 /// Runs the missing product tests with the given backend.
 ///
 /// # Arguments
@@ -395,11 +418,125 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
     }
 }
 
+/// Runs the product tests with the given backend.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+async fn product_tests<B: DataBackend>(backend: &B) {
+    // load the products from the test_data/products.json file
+    let products = load_products();
+
+    // add the products in the list
+    for product_desc in products.iter() {
+        info!("Added product with id: {}", product_desc.id);
+        assert!(backend.new_product(product_desc).await.unwrap());
+    }
+    info!("New products added");
+
+    // check if the added products are the same as the inserted ones by using the get_missing_product method
+    for with_preview in [true, false] {
+        for in_product in products.iter() {
+            let out_product = backend
+                .get_product(&in_product.id, with_preview)
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(out_product.name, in_product.name);
+            assert_eq!(out_product.id, in_product.id);
+            assert_eq!(out_product.portion, in_product.portion);
+            assert_eq!(out_product.producer, in_product.producer);
+            assert_eq!(out_product.quantity_type, in_product.quantity_type);
+            assert_eq!(
+                out_product.volume_weight_ratio,
+                in_product.volume_weight_ratio
+            );
+
+            if with_preview {
+                assert_eq!(out_product.preview, in_product.preview);
+
+                // if the preview flag is set, we also test getting the full image of the product
+                let full_image: Option<ProductImage> =
+                    backend.get_product_image(&in_product.id).await.unwrap();
+                assert_eq!(full_image, in_product.full_image);
+            }
+
+            check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
+        }
+    }
+
+    // add the products in the list again ... we should get false for all of them
+    for product_desc in products.iter() {
+        assert!(!backend.new_product(product_desc).await.unwrap());
+    }
+
+    // delete the first 2 products
+    backend.delete_product(&products[0].id).await.unwrap();
+    backend.delete_product(&products[1].id).await.unwrap();
+
+    assert_eq!(
+        backend.get_product(&products[0].id, true).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product(&products[1].id, true).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product(&products[0].id, false).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        backend.get_product(&products[1].id, false).await.unwrap(),
+        None
+    );
+
+    // delete the first 2 products again ... nothing should happen
+    backend.delete_product(&products[0].id).await.unwrap();
+    backend.delete_product(&products[1].id).await.unwrap();
+
+    // check that the last added product is still there
+    for with_preview in [true, false] {
+        let in_product = &products[2];
+
+        let out_product = backend
+            .get_product(&in_product.id, with_preview)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(out_product.name, in_product.name);
+        assert_eq!(out_product.id, in_product.id);
+        assert_eq!(out_product.portion, in_product.portion);
+        assert_eq!(out_product.producer, in_product.producer);
+        assert_eq!(out_product.quantity_type, in_product.quantity_type);
+        assert_eq!(
+            out_product.volume_weight_ratio,
+            in_product.volume_weight_ratio
+        );
+
+        if with_preview {
+            assert_eq!(out_product.preview, in_product.preview);
+
+            // if the preview flag is set, we also test getting the full image of the product
+            let full_image: Option<ProductImage> =
+                backend.get_product_image(&in_product.id).await.unwrap();
+            assert_eq!(full_image, in_product.full_image);
+        }
+
+        check_compare_nutrients(&out_product.nutrients, &in_product.nutrients);
+    }
+}
+
 /// Runs the backend tests with the given backend.
 ///
 /// # Arguments
 /// - `backend` - The backend to run the tests with.
 async fn backend_tests<B: DataBackend>(backend: B) {
+    info!("Do some operations with the backend...");
+    simple_ops(&backend).await;
+    info!("Do some operations with the backend...DONE");
+
     info!("Running backend tests...");
     missing_product_tests(&backend).await;
     info!("Running backend tests...SUCCESS");
@@ -407,6 +544,10 @@ async fn backend_tests<B: DataBackend>(backend: B) {
     info!("Running product requests tests...");
     product_requests_tests(&backend).await;
     info!("Running product requests tests...SUCCESS");
+
+    info!("Running product tests...");
+    product_tests(&backend).await;
+    info!("Running product tests...SUCCESS");
 }
 
 #[tokio::test(flavor = "multi_thread")]
