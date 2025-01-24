@@ -1,11 +1,15 @@
 use std::{
     fmt::{self, Display, Formatter},
     future::Future,
+    iter::Product,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
+use crate::{
+    MissingProduct, ProductDescription, ProductID, ProductImage, ProductInfo, ProductRequest,
+    Result,
+};
 
 pub type DBId = i32;
 
@@ -40,6 +44,48 @@ pub struct MissingProductQuery {
     /// If the results are in ascending or descending order of the reported date.
     pub order: SortingOrder,
 }
+
+/// The sorting field for the query results.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum SortingField {
+    /// The date when the product was reported. (Only applicable for product requests)
+    #[serde(rename = "reported_date")]
+    ReportedDate,
+
+    /// The name of the product.
+    #[serde(rename = "product_name")]
+    Name,
+
+    /// The ID of the product.
+    #[serde(rename = "product_id")]
+    ProductID,
+
+    /// The similarity of the search result. (Only applicable if search string is provided)
+    #[serde(rename = "similarity")]
+    Similarity,
+}
+
+/// The sorting parameters for the query results.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub struct Sorting {
+    /// The order of the sorting.
+    pub order: SortingOrder,
+
+    /// The field to sort the results by.
+    pub field: SortingField,
+}
+
+/// The query parameters for querying the products.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ProductQuery {
+    /// The offset of the query results.
+    pub offset: i32,
+    /// The limit of the query results.
+    pub limit: i32,
+    /// The search query to filter the results for (optional).
+    pub search: Option<String>,
+    /// The sorting parameters for the query results (optional).
+    pub sorting: Option<Sorting>,
 }
 
 pub trait DataBackend: Send + Sync {
@@ -150,4 +196,26 @@ pub trait DataBackend: Send + Sync {
     /// # Arguments
     /// - `id` - The public id of the product.
     fn delete_product(&self, id: &ProductID) -> impl Future<Output = Result<()>> + Send;
+
+    /// Queries for product requests and returns the list of product requests.
+    ///
+    /// # Arguments
+    /// - `query` - The query parameters for the product requests.
+    /// - `with_preview` - Whether to include the preview photo of the product in the response.
+    fn query_product_requests(
+        &self,
+        query: &ProductQuery,
+        with_preview: bool,
+    ) -> impl Future<Output = Result<Vec<(DBId, ProductDescription)>>> + Send;
+
+    /// Queries for products and returns the list of products.
+    ///
+    /// # Arguments
+    /// - `query` - The query parameters for the products.
+    /// - `with_preview` - Whether to include the preview photo of the product in the response.
+    fn query_products(
+        &self,
+        query: &ProductQuery,
+        with_preview: bool,
+    ) -> impl Future<Output = Result<Vec<ProductDescription>>> + Send;
 }

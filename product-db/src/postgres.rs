@@ -9,8 +9,8 @@ use sqlx::{
 
 use crate::{
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductInfo, ProductRequest, QuantityType, Result as ProductDBResult,
-    Secret, Weight,
+    ProductID, ProductImage, ProductInfo, ProductQuery, ProductRequest, QuantityType,
+    Result as ProductDBResult, Secret, Weight,
 };
 
 type Pool = sqlx::PgPool;
@@ -621,6 +621,22 @@ impl DataBackend for PostgresBackend {
         info!("Deleted product with id: {}", id);
 
         Ok(())
+    }
+
+    async fn query_product_requests(
+        &self,
+        query: &ProductQuery,
+        with_preview: bool,
+    ) -> ProductDBResult<Vec<(DBId, ProductDescription)>> {
+        unimplemented!()
+    }
+
+    async fn query_products(
+        &self,
+        query: &ProductQuery,
+        with_preview: bool,
+    ) -> ProductDBResult<Vec<ProductDescription>> {
+        unimplemented!()
     }
 }
 
