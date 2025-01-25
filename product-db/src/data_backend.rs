@@ -61,6 +61,17 @@ pub enum SortingField {
     Similarity,
 }
 
+impl Display for SortingField {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SortingField::ReportedDate => write!(f, "date"),
+            SortingField::Name => write!(f, "name"),
+            SortingField::ProductID => write!(f, "product_id"),
+            SortingField::Similarity => write!(f, "similarity"),
+        }
+    }
+}
+
 /// The sorting parameters for the query results.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub struct Sorting {

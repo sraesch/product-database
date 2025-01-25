@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS product_description(
     product_id varchar(64) NOT NULL, -- The id of the product
     name varchar(64) NOT NULL, -- The name of the product
     producer varchar(64), -- The producer of the product
+    name_producer_trgm tsvector, -- The name and producer of the product in trigram format
     -- The quantity type is either weight or volume.
     -- Weight in grams is used for products like flour, sugar, etc.
     -- Volume in ml is used for products like milk, water, etc.
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS product_description(
 CREATE INDEX IF NOT EXISTS product_description_product_id_index ON product_description(product_id);
 
 -- Index for the name of the product in product_description
-CREATE INDEX IF NOT EXISTS product_description_name_trgm_idx ON product_description USING gist(name gist_trgm_ops);
+CREATE INDEX IF NOT EXISTS product_description_name_trgm_idx ON product_description USING gin(name_producer_trgm);
 
 -- The table that stores the products
 CREATE TABLE IF NOT EXISTS products(
@@ -267,6 +268,19 @@ END;
 $$
 LANGUAGE plpgsql;
 
+-- Trigger function to update the trigram vector for the product description
+CREATE OR REPLACE FUNCTION trigger_insert_product_description()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    IF NEW.name_producer_trgm IS NULL OR NEW.name_producer_trgm = '' THEN
+        NEW.name_producer_trgm := to_tsvector(NEW.name || ' ' || NEW.producer);
+    END IF;
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
 --
 -- DEFINITION OF TRIGGERS
 --
@@ -287,4 +301,10 @@ CREATE TRIGGER trigger_delete_product_description
     AFTER DELETE ON product_description
     FOR EACH ROW
     EXECUTE FUNCTION trigger_func_delete_product_description();
+
+-- Trigger to update the trigram vector for the product description
+CREATE TRIGGER trigger_insert_product_description
+    BEFORE INSERT OR UPDATE ON product_description
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_insert_product_description();
 

@@ -3,16 +3,20 @@ use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
-    ConnectOptions, Executor, Row,
+    ConnectOptions, Executor, QueryBuilder, Row,
 };
 
 use crate::{
     sql_types::{SQLMissingProduct, SQLProductDescription, SQLRequestedProduct},
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
     ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, Secret,
+    SortingField,
 };
 
 type Pool = sqlx::PgPool;
+
+/// The maximum limit for the query results.
+const LIMIT_MAX: i32 = 100;
 
 /// Postgres based implementation of the state backend.
 pub struct PostgresBackend {
@@ -456,7 +460,77 @@ impl DataBackend for PostgresBackend {
         query: &ProductQuery,
         with_preview: bool,
     ) -> ProductDBResult<Vec<ProductDescription>> {
-        unimplemented!()
+        debug!("Query products: {:?}", query);
+
+        // start building the sql query
+        let mut query_builder = QueryBuilder::new(
+            "select
+        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,",
+        );
+
+        if with_preview {
+            query_builder.push("preview, preview_content_type from products_full_with_preview");
+        } else {
+            query_builder.push("null as preview, null as preview_content_type from products_full");
+        }
+
+        // add the where clause
+        if let Some(search_string) = query.search.as_ref() {
+            query_builder.push(" where name % ");
+            query_builder.push_bind(search_string);
+        }
+
+        // add the order by clause
+        if let Some(sorting) = query.sorting.as_ref() {
+            query_builder.push(" order by ");
+
+            // check if the sorting is valid
+            match sorting.field {
+                SortingField::Similarity => {
+                    if let Some(search_string) = query.search.as_ref() {
+                        query_builder.push("similarity(name, ");
+                        query_builder.push_bind(search_string);
+                        query_builder.push(") ");
+                    } else {
+                        return Err(Error::InvalidSortingError(sorting.field));
+                    }
+                }
+                SortingField::ReportedDate => {
+                    return Err(Error::InvalidSortingError(sorting.field));
+                }
+                _ => {
+                    query_builder.push(sorting.field.to_string());
+                }
+            }
+
+            query_builder.push(" ");
+            query_builder.push(sorting.order.to_string());
+        }
+
+        // add the limit and offset to the query
+        query_builder.push(" offset ");
+        query_builder.push_bind(query.offset);
+        query_builder.push(" limit ");
+        query_builder.push_bind(query.limit.min(LIMIT_MAX));
+
+        let query = query_builder.build_query_as::<SQLProductDescription>();
+
+        let mut rows = query.fetch(&self.pool);
+        let mut products = Vec::new();
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(|e| Error::DBError(Box::new(e)))?
+        {
+            let product: ProductDescription = row.into();
+            products.push(product);
+        }
+
+        Ok(products)
     }
 }
 

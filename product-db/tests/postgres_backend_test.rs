@@ -7,7 +7,7 @@ use dockertest::{
 use log::info;
 use product_db::{
     DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest, Secret,
+    ProductDescription, ProductImage, ProductQuery, ProductRequest, Secret, Sorting, SortingField,
     SortingOrder, Weight,
 };
 
@@ -535,31 +535,112 @@ async fn product_tests<B: DataBackend>(backend: &B) {
 async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDescription]) {
     info!("Querying products tests...");
 
-    // TODO: Remove the following line
-    return;
+    // query all products and check if they are the same as the inserted ones
+    for with_preview in [true, false] {
+        let out_products: Vec<ProductDescription> = backend
+            .query_products(
+                &ProductQuery {
+                    limit: 40,
+                    offset: 0,
+                    search: None,
+                    sorting: None,
+                },
+                with_preview,
+            )
+            .await
+            .unwrap();
 
-    // query all products and collect the product ids
-    let product_ids: Vec<ProductID> = backend
-        .query_products(
-            &ProductQuery {
-                limit: 40,
-                offset: 0,
-                search: None,
-                sorting: None,
-            },
-            false,
-        )
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|p| p.info.id)
-        .collect();
-    // make sure the product ids are unique
-    assert_eq!(
-        product_ids.len(),
-        product_ids.iter().collect::<HashSet<_>>().len()
-    );
-    assert_eq!(product_ids.len(), products.len());
+        assert_eq!(out_products.len(), products.len());
+        for (in_product, out_product) in products.iter().zip(out_products.iter()) {
+            compare_product_description(out_product, in_product, with_preview);
+
+            if with_preview {
+                // if the preview flag is set, we also test getting the full image of the product
+                let full_image: Option<ProductImage> = backend
+                    .get_product_image(&in_product.info.id)
+                    .await
+                    .unwrap();
+                assert_eq!(full_image, in_product.full_image);
+            }
+        }
+
+        // test everything with a search query
+        let offsets = [0, 1, 2, 3, 4];
+        let limits = [1, 2, 3, 4, 5];
+        let sortings = [
+            None,
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::ProductID,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::ProductID,
+            }),
+        ];
+
+        for (offset, (limit, sorting)) in offsets.iter().zip(limits.iter().zip(sortings.iter())) {
+            let out_products: Vec<ProductDescription> = backend
+                .query_products(
+                    &ProductQuery {
+                        limit: *limit,
+                        offset: *offset,
+                        search: None,
+                        sorting: *sorting,
+                    },
+                    with_preview,
+                )
+                .await
+                .unwrap();
+
+            // sort the input products according to the sorting
+            let mut sorted_products = products.to_vec();
+            if let Some(sorting) = sorting {
+                match sorting.field {
+                    SortingField::Name => {
+                        sorted_products.sort_by_key(|p| p.info.name.clone());
+                    }
+                    SortingField::ProductID => {
+                        sorted_products.sort_by_key(|p| p.info.id.clone());
+                    }
+                    _ => panic!("Unsupported sorting field"),
+                }
+
+                if sorting.order == SortingOrder::Descending {
+                    sorted_products.reverse();
+                }
+            }
+
+            let sorted_products = sorted_products
+                .iter()
+                .skip(*offset as usize)
+                .take(*limit as usize)
+                .cloned()
+                .collect::<Vec<ProductDescription>>();
+
+            assert_eq!(out_products.len(), sorted_products.len());
+            for (in_product, out_product) in sorted_products.iter().zip(out_products.iter()) {
+                compare_product_description(out_product, in_product, with_preview);
+
+                if with_preview {
+                    // if the preview flag is set, we also test getting the full image of the product
+                    let full_image: Option<ProductImage> = backend
+                        .get_product_image(&in_product.info.id)
+                        .await
+                        .unwrap();
+                    assert_eq!(full_image, in_product.full_image);
+                }
+            }
+        }
+    }
 
     info!("Querying products tests...SUCCESS");
 }
