@@ -245,7 +245,7 @@ mod test {
     fn test_deserialize_json() {
         let product_data = include_str!("../../test_data/products.json");
         let products: Vec<ProductDescription> = serde_json::from_str(product_data).unwrap();
-        assert_eq!(products.len(), 5);
+        assert_eq!(products.len(), 6);
 
         for p in products.iter() {
             if let Some(preview) = &p.preview {

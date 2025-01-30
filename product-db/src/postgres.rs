@@ -478,10 +478,13 @@ impl DataBackend for PostgresBackend {
             query_builder.push("null as preview, null as preview_content_type from products_full");
         }
 
+        // create lower case search string
+        let search_string = query.search.as_ref().map(|s| s.to_lowercase());
+
         // add the where clause
-        if let Some(search_string) = query.search.as_ref() {
-            query_builder.push(" where name % ");
-            query_builder.push_bind(search_string);
+        if let Some(search_string) = search_string.as_ref() {
+            query_builder.push(" where name_producer like ");
+            query_builder.push_bind(format!("%{}%", search_string));
         }
 
         // add the order by clause
@@ -492,7 +495,7 @@ impl DataBackend for PostgresBackend {
             match sorting.field {
                 SortingField::Similarity => {
                     if let Some(search_string) = query.search.as_ref() {
-                        query_builder.push("similarity(name, ");
+                        query_builder.push("similarity(name_producer, ");
                         query_builder.push_bind(search_string);
                         query_builder.push(") ");
                     } else {

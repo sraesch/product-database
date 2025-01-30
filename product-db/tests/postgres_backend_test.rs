@@ -7,8 +7,8 @@ use dockertest::{
 use log::info;
 use product_db::{
     DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductImage, ProductQuery, ProductRequest, Secret, Sorting, SortingField,
-    SortingOrder, Weight,
+    ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest, Secret, Sorting,
+    SortingField, SortingOrder, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -27,6 +27,18 @@ fn init_logger() {
 fn load_products() -> Vec<ProductDescription> {
     let product_data = include_str!("../../test_data/products.json");
     serde_json::from_str(product_data).unwrap()
+}
+
+/// Finds a product by its id.
+///
+/// # Arguments
+/// - `products` - The list of products to search in.
+/// - `id` - The id of the product to search for.
+fn find_product_by_id(
+    products: &[ProductDescription],
+    id: ProductID,
+) -> Option<&ProductDescription> {
+    products.iter().find(|p| p.info.id == id)
 }
 
 /// Slightly lossy comparison of two weights.
@@ -434,8 +446,12 @@ async fn product_tests<B: DataBackend>(backend: &B) {
     for product_desc in products.iter() {
         info!("Added product with id: {}", product_desc.info.id);
         assert!(backend.new_product(product_desc).await.unwrap());
+        info!(
+            "New product {} added from producer={}",
+            product_desc.info.name,
+            product_desc.info.producer.as_deref().unwrap_or("None")
+        );
     }
-    info!("New products added");
 
     // check if the added products are the same as the inserted ones by using the get_missing_product method
     for with_preview in [true, false] {
@@ -639,6 +655,38 @@ async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDe
                     assert_eq!(full_image, in_product.full_image);
                 }
             }
+        }
+
+        // using a search-string query, find all alpro products
+        let ret = backend
+            .query_products(
+                &ProductQuery {
+                    offset: 0,
+                    limit: 5,
+                    search: Some("Alpro".to_string()),
+                    sorting: Some(Sorting {
+                        order: SortingOrder::Descending,
+                        field: SortingField::Similarity,
+                    }),
+                },
+                with_preview,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(ret.len(), 2);
+
+        // get the two reference products
+        let alpro1 = find_product_by_id(products, "5411188080213".to_string()).unwrap();
+        let alpro2 = find_product_by_id(products, "5411188124689".to_string()).unwrap();
+        compare_product_description(&ret[0], alpro1, with_preview);
+        compare_product_description(&ret[1], alpro2, with_preview);
+
+        if with_preview {
+            // if the preview flag is set, we also test getting the full image of the product
+            let full_image: Option<ProductImage> =
+                backend.get_product_image(&ret[0].info.id).await.unwrap();
+            assert_eq!(full_image, ret[1].full_image);
         }
     }
 
