@@ -3,7 +3,7 @@ use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
-    ConnectOptions, Executor, QueryBuilder, Row,
+    query_builder, ConnectOptions, Database, Executor, QueryBuilder, Row,
 };
 
 use crate::{
@@ -227,27 +227,14 @@ impl DataBackend for PostgresBackend {
             id, with_preview
         );
 
-        let query_str = if !with_preview {
-            "select
-        product_id, date, name, producer, quantity_type, portion, volume_weight_ratio,
-        kcal, protein_grams, fat_grams, carbohydrates_grams,
-        sugar_grams, salt_grams,
-        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
-        null as preview, null as preview_content_type
-        from requested_products_full where r_id = $1;"
-        } else {
-            "select
-        product_id, date, name, producer, quantity_type, portion, volume_weight_ratio,
-        kcal, protein_grams, fat_grams, carbohydrates_grams,
-        sugar_grams, salt_grams,
-        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
-        preview, preview_content_type
-        from requested_products_full_with_preview where r_id = $1;"
-        };
+        let mut query_builder = QueryBuilder::default();
+        Self::init_get_product_request_query(&mut query_builder, with_preview);
 
-        let query = sqlx::query_as::<_, SQLRequestedProduct>(query_str).bind(id);
+        query_builder.push(" where r_id = $1;");
+
+        let query = query_builder
+            .build_query_as::<SQLRequestedProduct>()
+            .bind(id);
 
         let row = query.fetch_optional(&self.pool).await.map_err(|e| {
             error!("Failed to get product request: {}", e);
@@ -369,27 +356,13 @@ impl DataBackend for PostgresBackend {
     ) -> ProductDBResult<Option<ProductDescription>> {
         debug!("Get product with id: {} [Preview={}]", id, with_preview);
 
-        let query_str = if !with_preview {
-            "select
-        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
-        kcal, protein_grams, fat_grams, carbohydrates_grams,
-        sugar_grams, salt_grams,
-        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
-        null as preview, null as preview_content_type
-        from products_full where product_id = $1;"
-        } else {
-            "select
-        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
-        kcal, protein_grams, fat_grams, carbohydrates_grams,
-        sugar_grams, salt_grams,
-        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,
-        preview, preview_content_type
-        from products_full_with_preview where product_id = $1;"
-        };
+        let mut query_builder = QueryBuilder::default();
+        Self::init_get_product_query(&mut query_builder, with_preview);
+        query_builder.push(" where product_id = $1;");
+        let query = query_builder
+            .build_query_as::<SQLProductDescription>()
+            .bind(id);
 
-        let query = sqlx::query_as::<_, SQLProductDescription>(query_str).bind(id);
         let row = query.fetch_optional(&self.pool).await.map_err(|e| {
             error!("Failed to get product request: {}", e);
             Error::DBError(Box::new(e))
@@ -463,20 +436,8 @@ impl DataBackend for PostgresBackend {
         debug!("Query products: {:?}", query);
 
         // start building the sql query
-        let mut query_builder = QueryBuilder::new(
-            "select
-        product_id, name, producer, quantity_type, portion, volume_weight_ratio,
-        kcal, protein_grams, fat_grams, carbohydrates_grams,
-        sugar_grams, salt_grams,
-        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
-        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,",
-        );
-
-        if with_preview {
-            query_builder.push("preview, preview_content_type from products_full_with_preview");
-        } else {
-            query_builder.push("null as preview, null as preview_content_type from products_full");
-        }
+        let mut query_builder = QueryBuilder::default();
+        Self::init_get_product_query(&mut query_builder, with_preview);
 
         // create lower case search string
         let search_string = query.search.as_ref().map(|s| s.to_lowercase());
@@ -716,5 +677,52 @@ impl PostgresBackend {
         );
 
         Ok(db_id)
+    }
+
+    /// Add the fields of the product to the query.
+    ///
+    /// # Arguments
+    /// * `q` - The query builder to add the fields to.
+    /// * `with_preview` - Whether to include the preview image of the product in the response.
+    fn init_get_product_query<DB: Database>(q: &mut QueryBuilder<'_, DB>, with_preview: bool) {
+        // start building the sql query
+        q.push(
+            "select product_id, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,",
+        );
+
+        if with_preview {
+            q.push("preview, preview_content_type from products_full_with_preview");
+        } else {
+            q.push("null as preview, null as preview_content_type from products_full");
+        }
+    }
+
+    /// Initializes the query builder with a simple query to get the product request.
+    ///
+    /// # Arguments
+    /// * `q` - The query builder to initialize.
+    /// * `with_preview` - Whether to include the preview image of the product in the response.
+    fn init_get_product_request_query<DB: Database>(
+        q: &mut QueryBuilder<'_, DB>,
+        with_preview: bool,
+    ) {
+        q.push(
+            "select
+        product_id, date, name, producer, quantity_type, portion, volume_weight_ratio,
+        kcal, protein_grams, fat_grams, carbohydrates_grams,
+        sugar_grams, salt_grams,
+        vitamin_a_mg, vitamin_c_mg, vitamin_d_mug,
+        iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,",
+        );
+
+        if with_preview {
+            q.push("preview, preview_content_type from requested_products_full_with_preview");
+        } else {
+            q.push("null as preview, null as preview_content_type from requested_products_full");
+        }
     }
 }
