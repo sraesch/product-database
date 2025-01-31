@@ -6,9 +6,9 @@ use dockertest::{
 };
 use log::info;
 use product_db::{
-    DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest, Secret, Sorting,
-    SortingField, SortingOrder, Weight,
+    DBId, DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend,
+    PostgresConfig, ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest,
+    Secret, Sorting, SortingField, SortingOrder, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -39,6 +39,20 @@ fn find_product_by_id(
     id: ProductID,
 ) -> Option<&ProductDescription> {
     products.iter().find(|p| p.info.id == id)
+}
+
+/// Finds a product request by the product id.
+///
+/// # Arguments
+/// - `product_requests` - The list of product requests to search in.
+/// - `id` - The id of the product to search for its request.
+fn find_product_request_by_id(
+    product_requests: &[(DBId, ProductRequest)],
+    id: ProductID,
+) -> Option<&(DBId, ProductRequest)> {
+    product_requests
+        .iter()
+        .find(|p| p.1.product_description.info.id == id)
 }
 
 /// Slightly lossy comparison of two weights.
@@ -317,18 +331,24 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
     // load the products from the test_data/products.json file
     let products = load_products();
 
+    // turn the products into product requests
+    let product_requests: Vec<ProductRequest> = products
+        .iter()
+        .map(|p| ProductRequest {
+            product_description: p.clone(),
+            date: Utc::now(),
+        })
+        .collect();
+
     // request the products in the list
     let mut ids = Vec::new();
-    for product_desc in products.iter() {
-        let product_request = ProductRequest {
-            product_description: product_desc.clone(),
-            date: Utc::now(),
-        };
-
+    let mut product_requests_with_ids = Vec::new();
+    for product_request in product_requests.iter() {
         let id = backend.request_new_product(&product_request).await.unwrap();
         info!("Requested product with id: {}", id);
 
         ids.push(id);
+        product_requests_with_ids.push((id, product_request.clone()));
     }
 
     info!("Requested products with ids: {:?}", ids);
@@ -359,6 +379,9 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
             }
         }
     }
+
+    // execute the querying product requests tests
+    query_product_requests_tests(backend, product_requests_with_ids.as_slice()).await;
 
     // delete the first 2 requested products
     backend.delete_requested_product(ids[0]).await.unwrap();
@@ -406,6 +429,192 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
     }
 }
 
+/// Runs the query product requests tests with the given backend.
+///
+/// # Arguments
+/// - `backend` - The backend to run the tests with.
+/// - `product_requests` - The product requests to query.
+async fn query_product_requests_tests<B: DataBackend>(
+    backend: &B,
+    product_requests: &[(DBId, ProductRequest)],
+) {
+    info!("Querying product requests tests...");
+
+    // query all product requests and check if they are the same as the inserted ones
+    for with_preview in [true, false] {
+        let out_products: Vec<(DBId, ProductRequest)> = backend
+            .query_product_requests(
+                &ProductQuery {
+                    limit: 40,
+                    offset: 0,
+                    search: None,
+                    sorting: None,
+                },
+                with_preview,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(out_products.len(), product_requests.len());
+        for ((in_id, in_product), (out_id, out_product)) in
+            product_requests.iter().zip(out_products.iter())
+        {
+            compare_product_description(
+                &out_product.product_description,
+                &in_product.product_description,
+                with_preview,
+            );
+            assert_eq!(out_product.date, in_product.date);
+            assert_eq!(in_id, out_id);
+
+            if with_preview {
+                // if the preview flag is set, we also test getting the full image of the product
+                let full_image: Option<ProductImage> = backend
+                    .get_product_image(&in_product.product_description.info.id)
+                    .await
+                    .unwrap();
+                assert_eq!(full_image, in_product.product_description.full_image);
+            }
+        }
+
+        // test everything with a search query
+        let offsets = [0, 1, 2, 3, 4];
+        let limits = [1, 2, 3, 4, 5];
+        let sortings = [
+            None,
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::ProductID,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::ReportedDate,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::ProductID,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::ReportedDate,
+            }),
+        ];
+
+        for (offset, (limit, sorting)) in offsets.iter().zip(limits.iter().zip(sortings.iter())) {
+            let out_products: Vec<(DBId, ProductRequest)> = backend
+                .query_product_requests(
+                    &ProductQuery {
+                        limit: *limit,
+                        offset: *offset,
+                        search: None,
+                        sorting: *sorting,
+                    },
+                    with_preview,
+                )
+                .await
+                .unwrap();
+
+            // sort the input products according to the sorting
+            let mut sorted_product_requests = product_requests.to_vec();
+            if let Some(sorting) = sorting {
+                match sorting.field {
+                    SortingField::Name => {
+                        sorted_product_requests
+                            .sort_by_key(|p| p.1.product_description.info.name.clone());
+                    }
+                    SortingField::ProductID => {
+                        sorted_product_requests
+                            .sort_by_key(|p| p.1.product_description.info.id.clone());
+                    }
+                    SortingField::ReportedDate => {
+                        sorted_product_requests.sort_by_key(|p| p.1.date);
+                    }
+                    _ => panic!("Unsupported sorting field"),
+                }
+
+                if sorting.order == SortingOrder::Descending {
+                    sorted_product_requests.reverse();
+                }
+            }
+
+            let sorted_product_requests = sorted_product_requests
+                .iter()
+                .skip(*offset as usize)
+                .take(*limit as usize)
+                .cloned()
+                .collect::<Vec<(DBId, ProductRequest)>>();
+
+            assert_eq!(out_products.len(), sorted_product_requests.len());
+            for ((in_id, in_product), (out_id, out_product)) in
+                sorted_product_requests.iter().zip(out_products.iter())
+            {
+                compare_product_description(
+                    &out_product.product_description,
+                    &in_product.product_description,
+                    with_preview,
+                );
+                assert_eq!(out_product.date, in_product.date);
+                assert_eq!(in_id, out_id);
+
+                if with_preview {
+                    // if the preview flag is set, we also test getting the full image of the product
+                    let full_image: Option<ProductImage> = backend
+                        .get_product_image(&in_product.product_description.info.id)
+                        .await
+                        .unwrap();
+                    assert_eq!(full_image, in_product.product_description.full_image);
+                }
+            }
+        }
+
+        // using a search-string query, find all alpro products
+        let ret = backend
+            .query_product_requests(
+                &ProductQuery {
+                    offset: 0,
+                    limit: 5,
+                    search: Some("Alpro".to_string()),
+                    sorting: Some(Sorting {
+                        order: SortingOrder::Descending,
+                        field: SortingField::Similarity,
+                    }),
+                },
+                with_preview,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(ret.len(), 2);
+
+        // get the two reference product requests
+        let alpro1 =
+            find_product_request_by_id(product_requests, "5411188080213".to_string()).unwrap();
+        let alpro2 =
+            find_product_request_by_id(product_requests, "5411188124689".to_string()).unwrap();
+        compare_product_requests(&ret[0], alpro1, with_preview);
+        compare_product_requests(&ret[1], alpro2, with_preview);
+
+        if with_preview {
+            // if the preview flag is set, we also test getting the full image of the product
+            let full_image: Option<ProductImage> = backend
+                .get_product_image(&ret[0].1.product_description.info.id)
+                .await
+                .unwrap();
+            assert_eq!(full_image, ret[1].1.product_description.full_image);
+        }
+    }
+
+    info!("Querying product requests tests...SUCCESS");
+}
+
 /// Compares the product info of two products.
 /// Asserts that the product info is the same.
 ///
@@ -421,6 +630,37 @@ fn compare_product_info(lhs: &ProductDescription, rhs: &ProductDescription) {
     assert_eq!(lhs.info.volume_weight_ratio, rhs.info.volume_weight_ratio);
 }
 
+/// Compares the product requests of two products.
+/// Asserts that the product requests are the same.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+/// - `check_preview` - Whether to check the preview image.
+fn compare_product_requests(
+    lhs: &(DBId, ProductRequest),
+    rhs: &(DBId, ProductRequest),
+    check_preview: bool,
+) {
+    assert_eq!(lhs.0, rhs.0);
+
+    let lhs = &lhs.1;
+    let rhs = &rhs.1;
+    assert_eq!(lhs.date, rhs.date);
+    compare_product_description(
+        &lhs.product_description,
+        &rhs.product_description,
+        check_preview,
+    );
+}
+
+/// Compares the product description of two products.
+/// Asserts that the product descriptions are the same.
+///
+/// # Arguments
+/// - `lhs` - The left hand side of the comparison.
+/// - `rhs` - The right hand side of the comparison.
+/// - `check_preview` - Whether to check the preview image.
 fn compare_product_description(
     lhs: &ProductDescription,
     rhs: &ProductDescription,

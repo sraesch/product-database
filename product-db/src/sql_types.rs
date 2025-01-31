@@ -75,6 +75,24 @@ impl FromRow<'_, PgRow> for SQLRequestedProduct {
     }
 }
 
+/// A product request with id
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLRequestedProductWithId {
+    pub id: DBId,
+    pub desc: SQLProductDescription,
+    pub date: DateTime<Utc>,
+}
+
+impl FromRow<'_, PgRow> for SQLRequestedProductWithId {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            desc: SQLProductDescription::from_row(row)?,
+            date: row.try_get("date")?,
+            id: row.try_get("r_id")?,
+        })
+    }
+}
+
 impl From<&SQLProductDescription> for Nutrients {
     fn from(r: &SQLProductDescription) -> Self {
         Self {
@@ -149,6 +167,24 @@ impl From<SQLRequestedProduct> for ProductRequest {
         Self {
             date: r.date,
             product_description: r.desc.into(),
+        }
+    }
+}
+
+impl From<SQLRequestedProductWithId> for ProductRequest {
+    fn from(r: SQLRequestedProductWithId) -> Self {
+        let date = r.date;
+        let nutrients = (&r.desc).into();
+        let (preview, info) = r.desc.into();
+
+        Self {
+            date,
+            product_description: ProductDescription {
+                info,
+                nutrients,
+                preview,
+                full_image: None,
+            },
         }
     }
 }

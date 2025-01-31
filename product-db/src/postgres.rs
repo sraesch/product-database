@@ -7,7 +7,9 @@ use sqlx::{
 };
 
 use crate::{
-    sql_types::{SQLMissingProduct, SQLProductDescription, SQLRequestedProduct},
+    sql_types::{
+        SQLMissingProduct, SQLProductDescription, SQLRequestedProduct, SQLRequestedProductWithId,
+    },
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
     ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, Secret,
     SortingField,
@@ -111,20 +113,20 @@ impl DataBackend for PostgresBackend {
     ) -> ProductDBResult<Vec<(DBId, MissingProduct)>> {
         let sorting_order = query.order.to_string();
 
-        let mut _q: String = String::new();
-        let query = if let Some(product_id) = query.product_id.as_ref() {
-            _q = format!("select id, product_id, date from reported_missing_products where product_id = $1 order by date {} offset $2 limit $3;", sorting_order);
-            sqlx::query_as::<_, SQLMissingProduct>(_q.as_str())
-                .bind(product_id)
-                .bind(query.offset)
-                .bind(query.limit)
-        } else {
-            _q = format!("select id, product_id, date from reported_missing_products order by date {} offset $1 limit $2;", sorting_order);
-            sqlx::query_as::<_, SQLMissingProduct>(_q.as_str())
-                .bind(query.offset)
-                .bind(query.limit)
-        };
+        let mut query_builder =
+            QueryBuilder::new("select id, product_id, date from reported_missing_products ");
 
+        let mut _q: String = String::new();
+        if let Some(product_id) = query.product_id.as_ref() {
+            query_builder.push("where product_id = ");
+            query_builder.push_bind(product_id);
+        }
+
+        query_builder.push(" order by date ");
+        query_builder.push(sorting_order.as_str());
+        Self::add_offset_and_limit(&mut query_builder, query.offset, query.limit);
+
+        let query = query_builder.build_query_as::<SQLMissingProduct>();
         let mut rows = query.fetch(&self.pool);
         let mut missing_products = Vec::new();
         while let Some(row) = rows
@@ -228,7 +230,7 @@ impl DataBackend for PostgresBackend {
         );
 
         let mut query_builder = QueryBuilder::default();
-        Self::init_get_product_request_query(&mut query_builder, with_preview);
+        Self::init_get_product_request_query(&mut query_builder, with_preview, false);
 
         query_builder.push(" where r_id = $1;");
 
@@ -424,8 +426,67 @@ impl DataBackend for PostgresBackend {
         &self,
         query: &ProductQuery,
         with_preview: bool,
-    ) -> ProductDBResult<Vec<(DBId, ProductDescription)>> {
-        unimplemented!()
+    ) -> ProductDBResult<Vec<(DBId, ProductRequest)>> {
+        debug!("Query product requests: {:?}", query);
+
+        // start building the sql query
+        let mut query_builder = QueryBuilder::default();
+        Self::init_get_product_request_query(&mut query_builder, with_preview, true);
+
+        // create lower case search string
+        let search_string = query.search.as_ref().map(|s| s.to_lowercase());
+
+        // add the where clause
+        if let Some(search_string) = search_string.as_ref() {
+            query_builder.push(" where name_producer like ");
+            query_builder.push_bind(format!("%{}%", search_string));
+        }
+
+        // add the order by clause
+        if let Some(sorting) = query.sorting.as_ref() {
+            query_builder.push(" order by ");
+
+            // check if the sorting is valid
+            match sorting.field {
+                SortingField::Similarity => {
+                    if let Some(search_string) = query.search.as_ref() {
+                        query_builder.push("similarity(name_producer, ");
+                        query_builder.push_bind(search_string);
+                        query_builder.push(") ");
+                    } else {
+                        return Err(Error::InvalidSortingError(sorting.field));
+                    }
+                }
+                SortingField::ReportedDate => {
+                    query_builder.push("date");
+                }
+                _ => {
+                    query_builder.push(sorting.field.to_string());
+                }
+            }
+
+            query_builder.push(" ");
+            query_builder.push(sorting.order.to_string());
+        }
+
+        // add the limit and offset to the query
+        Self::add_offset_and_limit(&mut query_builder, query.offset, query.limit);
+
+        let query = query_builder.build_query_as::<SQLRequestedProductWithId>();
+
+        let mut rows = query.fetch(&self.pool);
+        let mut result: Vec<(DBId, ProductRequest)> = Vec::new();
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(|e| Error::DBError(Box::new(e)))?
+        {
+            let db_id = row.id;
+            let product_request: ProductRequest = row.into();
+            result.push((db_id, product_request));
+        }
+
+        Ok(result)
     }
 
     async fn query_products(
@@ -476,10 +537,7 @@ impl DataBackend for PostgresBackend {
         }
 
         // add the limit and offset to the query
-        query_builder.push(" offset ");
-        query_builder.push_bind(query.offset);
-        query_builder.push(" limit ");
-        query_builder.push_bind(query.limit.min(LIMIT_MAX));
+        Self::add_offset_and_limit(&mut query_builder, query.offset, query.limit);
 
         let query = query_builder.build_query_as::<SQLProductDescription>();
 
@@ -706,9 +764,11 @@ impl PostgresBackend {
     /// # Arguments
     /// * `q` - The query builder to initialize.
     /// * `with_preview` - Whether to include the preview image of the product in the response.
+    /// * `with_db_id` - Whether to include the database id in the response.
     fn init_get_product_request_query<DB: Database>(
         q: &mut QueryBuilder<'_, DB>,
         with_preview: bool,
+        with_db_id: bool,
     ) {
         q.push(
             "select
@@ -719,10 +779,25 @@ impl PostgresBackend {
         iron_mg, calcium_mg, magnesium_mg, sodium_mg, zinc_mg,",
         );
 
+        if with_db_id {
+            q.push("r_id,");
+        }
+
         if with_preview {
             q.push("preview, preview_content_type from requested_products_full_with_preview");
         } else {
             q.push("null as preview, null as preview_content_type from requested_products_full");
         }
+    }
+
+    fn add_offset_and_limit<'q, DB>(q: &mut QueryBuilder<'q, DB>, offset: i32, limit: i32)
+    where
+        DB: Database,
+        i32: sqlx::Encode<'q, DB> + sqlx::Type<DB>, // Ensure i32 can be used in SQL queries
+    {
+        q.push(" offset ");
+        q.push_bind(offset);
+        q.push(" limit ");
+        q.push_bind(limit.min(LIMIT_MAX));
     }
 }

@@ -213,7 +213,7 @@ pub trait DataBackend: Send + Sync {
         &self,
         query: &ProductQuery,
         with_preview: bool,
-    ) -> impl Future<Output = Result<Vec<(DBId, ProductDescription)>>> + Send;
+    ) -> impl Future<Output = Result<Vec<(DBId, ProductRequest)>>> + Send;
 
     /// Queries for products and returns the list of products.
     ///
