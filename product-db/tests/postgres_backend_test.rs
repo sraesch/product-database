@@ -8,7 +8,7 @@ use log::info;
 use product_db::{
     DBId, DataBackend, MissingProduct, MissingProductQuery, Nutrients, PostgresBackend,
     PostgresConfig, ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest,
-    Secret, Sorting, SortingField, SortingOrder, Weight,
+    SearchFilter, Secret, Sorting, SortingField, SortingOrder, Weight,
 };
 
 /// Initialize the logger for the tests.
@@ -383,6 +383,36 @@ async fn product_requests_tests<B: DataBackend>(backend: &B) {
     // execute the querying product requests tests
     query_product_requests_tests(backend, product_requests_with_ids.as_slice()).await;
 
+    // add the first product request again, but modify it slightly
+    let mut modified_product_request = product_requests[0].clone();
+    modified_product_request.product_description.info.name += "Modified Name";
+    ids.push(
+        backend
+            .request_new_product(&modified_product_request)
+            .await
+            .unwrap(),
+    );
+
+    // now query the modified product request
+    let product_requests = backend
+        .query_product_requests(
+            &ProductQuery {
+                limit: 40,
+                offset: 0,
+                filter: SearchFilter::ProductID(
+                    modified_product_request.product_description.info.id.clone(),
+                ),
+                sorting: None,
+            },
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(product_requests.len(), 2);
+    assert_eq!(product_requests[0].0, ids[0]);
+    assert_eq!(product_requests[1].0, ids[ids.len() - 1]);
+
     // delete the first 2 requested products
     backend.delete_requested_product(ids[0]).await.unwrap();
     backend.delete_requested_product(ids[1]).await.unwrap();
@@ -447,7 +477,7 @@ async fn query_product_requests_tests<B: DataBackend>(
                 &ProductQuery {
                     limit: 40,
                     offset: 0,
-                    search: None,
+                    filter: SearchFilter::NoFilter,
                     sorting: None,
                 },
                 with_preview,
@@ -514,7 +544,7 @@ async fn query_product_requests_tests<B: DataBackend>(
                     &ProductQuery {
                         limit: *limit,
                         offset: *offset,
-                        search: None,
+                        filter: SearchFilter::NoFilter,
                         sorting: *sorting,
                     },
                     with_preview,
@@ -581,7 +611,7 @@ async fn query_product_requests_tests<B: DataBackend>(
                 &ProductQuery {
                     offset: 0,
                     limit: 5,
-                    search: Some("Alpro".to_string()),
+                    filter: SearchFilter::Search("Alpro".to_string()),
                     sorting: Some(Sorting {
                         order: SortingOrder::Descending,
                         field: SortingField::Similarity,
@@ -798,7 +828,7 @@ async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDe
                 &ProductQuery {
                     limit: 40,
                     offset: 0,
-                    search: None,
+                    filter: SearchFilter::NoFilter,
                     sorting: None,
                 },
                 with_preview,
@@ -849,7 +879,7 @@ async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDe
                     &ProductQuery {
                         limit: *limit,
                         offset: *offset,
-                        search: None,
+                        filter: SearchFilter::NoFilter,
                         sorting: *sorting,
                     },
                     with_preview,
@@ -903,7 +933,7 @@ async fn query_products_tests<B: DataBackend>(backend: &B, products: &[ProductDe
                 &ProductQuery {
                     offset: 0,
                     limit: 5,
-                    search: Some("Alpro".to_string()),
+                    filter: SearchFilter::Search("Alpro".to_string()),
                     sorting: Some(Sorting {
                         order: SortingOrder::Descending,
                         field: SortingField::Similarity,

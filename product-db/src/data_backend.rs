@@ -82,6 +82,32 @@ pub struct Sorting {
     pub field: SortingField,
 }
 
+/// The search filter for the query results.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum SearchFilter {
+    #[serde(rename = "no_filter")]
+    NoFilter,
+
+    /// The search query to filter the results for.
+    #[serde(rename = "search")]
+    Search(String),
+
+    /// The product id to filter the results for.
+    #[serde(rename = "product_id")]
+    ProductID(ProductID),
+}
+
+impl SearchFilter {
+    /// Returns the search string if the filter is a search filter.
+    /// Returns `None` otherwise.
+    pub fn search_string(&self) -> Option<&str> {
+        match self {
+            SearchFilter::Search(search) => Some(search),
+            _ => None,
+        }
+    }
+}
+
 /// The query parameters for querying the products.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProductQuery {
@@ -89,8 +115,8 @@ pub struct ProductQuery {
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,
-    /// The search query to filter the results for (optional).
-    pub search: Option<String>,
+    /// The filter to apply to the query results.
+    pub filter: SearchFilter,
     /// The sorting parameters for the query results (optional).
     pub sorting: Option<Sorting>,
 }

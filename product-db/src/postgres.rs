@@ -3,7 +3,7 @@ use log::{debug, error, info, trace, LevelFilter};
 use serde::Deserialize;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
-    query_builder, ConnectOptions, Database, Executor, QueryBuilder, Row,
+    ConnectOptions, Database, Executor, QueryBuilder, Row,
 };
 
 use crate::{
@@ -11,14 +11,14 @@ use crate::{
         SQLMissingProduct, SQLProductDescription, SQLRequestedProduct, SQLRequestedProductWithId,
     },
     DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, Secret,
-    SortingField,
+    ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, SearchFilter,
+    Secret, SortingField,
 };
 
 type Pool = sqlx::PgPool;
 
 /// The maximum limit for the query results.
-const LIMIT_MAX: i32 = 100;
+const LIMIT_MAX: i32 = 200;
 
 /// Postgres based implementation of the state backend.
 pub struct PostgresBackend {
@@ -433,13 +433,17 @@ impl DataBackend for PostgresBackend {
         let mut query_builder = QueryBuilder::default();
         Self::init_get_product_request_query(&mut query_builder, with_preview, true);
 
-        // create lower case search string
-        let search_string = query.search.as_ref().map(|s| s.to_lowercase());
-
         // add the where clause
-        if let Some(search_string) = search_string.as_ref() {
-            query_builder.push(" where name_producer like ");
-            query_builder.push_bind(format!("%{}%", search_string));
+        match &query.filter {
+            SearchFilter::NoFilter => {}
+            SearchFilter::ProductID(product_id) => {
+                query_builder.push(" where product_id = ");
+                query_builder.push_bind(product_id);
+            }
+            SearchFilter::Search(s) => {
+                query_builder.push(" where name_producer like ");
+                query_builder.push_bind(format!("%{}%", s.to_lowercase()));
+            }
         }
 
         // add the order by clause
@@ -449,7 +453,7 @@ impl DataBackend for PostgresBackend {
             // check if the sorting is valid
             match sorting.field {
                 SortingField::Similarity => {
-                    if let Some(search_string) = query.search.as_ref() {
+                    if let SearchFilter::Search(search_string) = &query.filter {
                         query_builder.push("similarity(name_producer, ");
                         query_builder.push_bind(search_string);
                         query_builder.push(") ");
@@ -501,7 +505,8 @@ impl DataBackend for PostgresBackend {
         Self::init_get_product_query(&mut query_builder, with_preview);
 
         // create lower case search string
-        let search_string = query.search.as_ref().map(|s| s.to_lowercase());
+        let search_string = query.filter.search_string();
+        let search_string = search_string.map(|s| s.to_lowercase());
 
         // add the where clause
         if let Some(search_string) = search_string.as_ref() {
@@ -516,9 +521,9 @@ impl DataBackend for PostgresBackend {
             // check if the sorting is valid
             match sorting.field {
                 SortingField::Similarity => {
-                    if let Some(search_string) = query.search.as_ref() {
+                    if let Some(search_string) = search_string.as_ref() {
                         query_builder.push("similarity(name_producer, ");
-                        query_builder.push_bind(search_string);
+                        query_builder.push_bind(search_string.to_lowercase());
                         query_builder.push(") ");
                     } else {
                         return Err(Error::InvalidSortingError(sorting.field));
