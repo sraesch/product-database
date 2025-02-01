@@ -6,9 +6,13 @@ use dockertest::{
 };
 use log::{debug, info};
 use product_db::{
-    service_json::{GetProductRequestResponse, ProductRequestResponse},
+    service_json::{
+        DeletingProductRequestResponse, GetProductRequestResponse, ProductRequestQueryResponse,
+        ProductRequestResponse,
+    },
     DBId, DataBackend, EndpointOptions, Nutrients, Options, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductRequest, Secret, Service, Weight,
+    ProductDescription, ProductID, ProductQuery, ProductRequest, SearchFilter, Secret, Service,
+    Sorting, SortingField, SortingOrder, Weight,
 };
 use reqwest::{StatusCode, Url};
 
@@ -39,6 +43,32 @@ fn init_logger() {
 fn load_products() -> Vec<ProductDescription> {
     let product_data = include_str!("../../test_data/products.json");
     serde_json::from_str(product_data).unwrap()
+}
+
+/// Finds a product by its id.
+///
+/// # Arguments
+/// - `products` - The list of products to search in.
+/// - `id` - The id of the product to search for.
+fn find_product_by_id(
+    products: &[ProductDescription],
+    id: ProductID,
+) -> Option<&ProductDescription> {
+    products.iter().find(|p| p.info.id == id)
+}
+
+/// Finds a product request by the product id.
+///
+/// # Arguments
+/// - `product_requests` - The list of product requests to search in.
+/// - `id` - The id of the product to search for its request.
+fn find_product_request_by_id(
+    product_requests: &[(DBId, ProductRequest)],
+    id: ProductID,
+) -> Option<&(DBId, ProductRequest)> {
+    product_requests
+        .iter()
+        .find(|p| p.1.product_description.info.id == id)
 }
 
 /// Slightly lossy comparison of two weights.
@@ -283,6 +313,64 @@ impl ServiceClient {
 
         response.product_request
     }
+
+    /// Queries the product requests.
+    ///
+    /// # Arguments
+    /// - `query` - The query to use.
+    pub async fn query_product_requests(
+        &self,
+        query: &ProductQuery,
+    ) -> Vec<(DBId, ProductRequest)> {
+        let mut url = self
+            .server_address
+            .join("/admin/product_request/query")
+            .unwrap();
+
+        debug!("GET: {}", url);
+        let query_str = serde_qs::to_string(query).unwrap();
+        url.set_query(Some(query_str.as_str()));
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Product request response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert_eq!(status_code, StatusCode::OK);
+
+        let response: ProductRequestQueryResponse = response.json().await.unwrap();
+
+        response.product_requests
+    }
+
+    /// Deletes the product request with the given id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the product request to get.
+    pub async fn delete_requested_product(&self, id: DBId) {
+        let url = self
+            .server_address
+            .join("/admin/product_request/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        debug!("DELETE: {}", url);
+
+        let response = self.client.delete(url).send().await.unwrap();
+        debug!(
+            "Delete product request response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert_eq!(status_code, StatusCode::OK);
+        let response: DeletingProductRequestResponse = response.json().await.unwrap();
+
+        debug!("Delete product request response: {:?}", response);
+    }
 }
 
 /// Runs the product requests tests against the service.
@@ -341,83 +429,220 @@ async fn product_requests_tests(options: &EndpointOptions) {
         }
     }
 
-    // // execute the querying product requests tests
-    // query_product_requests_tests(backend, product_requests_with_ids.as_slice()).await;
+    // execute the querying product requests tests
+    query_product_requests_tests(&client, product_requests_with_ids.as_slice()).await;
 
-    // // add the first product request again, but modify it slightly
-    // let mut modified_product_request = product_requests[0].clone();
-    // modified_product_request.product_description.info.name += "Modified Name";
-    // ids.push(
-    //     backend
-    //         .request_new_product(&modified_product_request)
-    //         .await
-    //         .unwrap(),
-    // );
+    // add the first product request again, but modify it slightly
+    let mut modified_product_request = product_requests[0].clone();
+    modified_product_request.product_description.info.name += "Modified Name";
+    ids.push(
+        client
+            .request_new_product(&modified_product_request.product_description)
+            .await
+            .0,
+    );
 
-    // // now query the modified product request
-    // let product_requests = backend
-    //     .query_product_requests(
-    //         &ProductQuery {
-    //             limit: 40,
-    //             offset: 0,
-    //             filter: SearchFilter::ProductID(
-    //                 modified_product_request.product_description.info.id.clone(),
-    //             ),
-    //             sorting: None,
-    //         },
-    //         false,
-    //     )
-    //     .await
-    //     .unwrap();
+    // now query the modified product request
+    let product_requests = client
+        .query_product_requests(&ProductQuery {
+            limit: 40,
+            offset: 0,
+            filter: SearchFilter::ProductID(
+                modified_product_request.product_description.info.id.clone(),
+            ),
+            sorting: None,
+        })
+        .await;
 
-    // assert_eq!(product_requests.len(), 2);
-    // assert_eq!(product_requests[0].0, ids[0]);
-    // assert_eq!(product_requests[1].0, ids[ids.len() - 1]);
+    assert_eq!(product_requests.len(), 2);
+    assert_eq!(product_requests[0].0, ids[0]);
+    assert_eq!(product_requests[1].0, ids[ids.len() - 1]);
 
-    // // delete the first 2 requested products
-    // backend.delete_requested_product(ids[0]).await.unwrap();
-    // backend.delete_requested_product(ids[1]).await.unwrap();
+    // delete the first 2 requested products
+    client.delete_requested_product(ids[0]).await;
+    client.delete_requested_product(ids[1]).await;
 
-    // assert_eq!(
-    //     backend.get_product_request(ids[0], true).await.unwrap(),
-    //     None
-    // );
-    // assert_eq!(
-    //     backend.get_product_request(ids[1], true).await.unwrap(),
-    //     None
-    // );
-    // assert_eq!(
-    //     backend.get_product_request(ids[0], false).await.unwrap(),
-    //     None
-    // );
-    // assert_eq!(
-    //     backend.get_product_request(ids[1], false).await.unwrap(),
-    //     None
-    // );
+    assert_eq!(client.get_product_request(ids[0], true, false).await, None);
+    assert_eq!(client.get_product_request(ids[1], true, false).await, None);
+    assert_eq!(client.get_product_request(ids[0], false, false).await, None);
+    assert_eq!(client.get_product_request(ids[1], false, false).await, None);
 
-    // // delete the first 2 requested products again ... nothing should happen
-    // backend.delete_requested_product(ids[0]).await.unwrap();
-    // backend.delete_requested_product(ids[1]).await.unwrap();
+    // delete the first 2 requested products again ... nothing should happen
+    client.delete_requested_product(ids[0]).await;
+    client.delete_requested_product(ids[1]).await;
 
-    // // check that the last requested product is still there
-    // for with_preview in [true, false] {
-    //     let product_request = backend
-    //         .get_product_request(ids[2], with_preview)
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
+    // check that the last requested product is still there
+    for with_preview in [true, false] {
+        let product_request = client
+            .get_product_request(ids[2], with_preview, with_preview)
+            .await
+            .unwrap();
 
-    //     let out_product = &product_request.product_description;
-    //     let in_product = &products[2];
+        let out_product = &product_request.product_description;
+        let in_product = &products[2];
 
-    //     compare_product_description(out_product, in_product, with_preview);
-    //     if with_preview {
-    //         // if the preview flag is set, we also test getting the full image of the product
-    //         let full_image: Option<ProductImage> =
-    //             backend.get_product_request_image(ids[2]).await.unwrap();
-    //         assert_eq!(full_image, in_product.full_image);
-    //     }
-    // }
+        compare_product_description(out_product, in_product, with_preview);
+        if with_preview {
+            // if the preview flag is set, we also test getting the full image of the product
+            assert_eq!(
+                product_request.product_description.full_image,
+                in_product.full_image
+            );
+        }
+    }
+}
+
+/// Runs the query product requests tests.
+///
+/// # Arguments
+/// - `client` - The service client.
+/// - `product_requests` - The product requests to query.
+async fn query_product_requests_tests(
+    client: &ServiceClient,
+    product_requests: &[(DBId, ProductRequest)],
+) {
+    info!("Querying product requests tests...");
+
+    // query all product requests and check if they are the same as the inserted ones
+    for with_preview in [true, false] {
+        let out_products: Vec<(DBId, ProductRequest)> = client
+            .query_product_requests(&ProductQuery {
+                limit: 40,
+                offset: 0,
+                filter: SearchFilter::NoFilter,
+                sorting: None,
+            })
+            .await;
+
+        assert_eq!(out_products.len(), product_requests.len());
+        for ((in_id, in_product), (out_id, out_product)) in
+            product_requests.iter().zip(out_products.iter())
+        {
+            compare_product_description(
+                &out_product.product_description,
+                &in_product.product_description,
+                with_preview,
+            );
+            assert_eq!(
+                truncate_datetime(out_product.date),
+                truncate_datetime(in_product.date)
+            );
+            assert_eq!(in_id, out_id);
+        }
+
+        // test everything with a search query
+        let offsets = [0, 1, 2, 3, 4];
+        let limits = [1, 2, 3, 4, 5];
+        let sortings = [
+            None,
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::ProductID,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Ascending,
+                field: SortingField::ReportedDate,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::Name,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::ProductID,
+            }),
+            Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::ReportedDate,
+            }),
+        ];
+
+        for (offset, (limit, sorting)) in offsets.iter().zip(limits.iter().zip(sortings.iter())) {
+            let out_products: Vec<(DBId, ProductRequest)> = client
+                .query_product_requests(&ProductQuery {
+                    limit: *limit,
+                    offset: *offset,
+                    filter: SearchFilter::NoFilter,
+                    sorting: *sorting,
+                })
+                .await;
+
+            // sort the input products according to the sorting
+            let mut sorted_product_requests = product_requests.to_vec();
+            if let Some(sorting) = sorting {
+                match sorting.field {
+                    SortingField::Name => {
+                        sorted_product_requests
+                            .sort_by_key(|p| p.1.product_description.info.name.clone());
+                    }
+                    SortingField::ProductID => {
+                        sorted_product_requests
+                            .sort_by_key(|p| p.1.product_description.info.id.clone());
+                    }
+                    SortingField::ReportedDate => {
+                        sorted_product_requests.sort_by_key(|p| p.1.date);
+                    }
+                    _ => panic!("Unsupported sorting field"),
+                }
+
+                if sorting.order == SortingOrder::Descending {
+                    sorted_product_requests.reverse();
+                }
+            }
+
+            let sorted_product_requests = sorted_product_requests
+                .iter()
+                .skip(*offset as usize)
+                .take(*limit as usize)
+                .cloned()
+                .collect::<Vec<(DBId, ProductRequest)>>();
+
+            assert_eq!(out_products.len(), sorted_product_requests.len());
+            for ((in_id, in_product), (out_id, out_product)) in
+                sorted_product_requests.iter().zip(out_products.iter())
+            {
+                compare_product_description(
+                    &out_product.product_description,
+                    &in_product.product_description,
+                    with_preview,
+                );
+                assert_eq!(
+                    truncate_datetime(out_product.date),
+                    truncate_datetime(in_product.date)
+                );
+                assert_eq!(in_id, out_id);
+            }
+        }
+
+        // using a search-string query, find all alpro products
+        let ret = client
+            .query_product_requests(&ProductQuery {
+                offset: 0,
+                limit: 5,
+                filter: SearchFilter::Search("Alpro".to_string()),
+                sorting: Some(Sorting {
+                    order: SortingOrder::Descending,
+                    field: SortingField::Similarity,
+                }),
+            })
+            .await;
+
+        assert_eq!(ret.len(), 2);
+
+        // get the two reference product requests
+        let alpro1 =
+            find_product_request_by_id(product_requests, "5411188080213".to_string()).unwrap();
+        let alpro2 =
+            find_product_request_by_id(product_requests, "5411188124689".to_string()).unwrap();
+        compare_product_requests(&ret[0], alpro1, with_preview);
+        compare_product_requests(&ret[1], alpro2, with_preview);
+    }
+
+    info!("Querying product requests tests...SUCCESS");
 }
 
 /// Runs the service tests with the given backend.
