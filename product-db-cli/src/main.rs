@@ -1,11 +1,12 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
+use tokio::signal;
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
 use log::{error, info, LevelFilter};
 use logging::initialize_logging;
 use options::{ProgramConfig, ProgramOptions};
-use product_db::Options;
+use product_db::{Options, PostgresBackend, Service};
 
 mod logging;
 mod options;
@@ -47,6 +48,31 @@ pub fn parse_args_and_init_logging(
     })
 }
 
+/// Waits for the shutdown signal.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
 /// Runs the program.
 async fn run_program() -> Result<()> {
     // read the application name, version and description from the Cargo.toml file
@@ -56,14 +82,25 @@ async fn run_program() -> Result<()> {
         env!("CARGO_PKG_DESCRIPTION"),
     );
 
-    let _options = parse_args_and_init_logging(app_name, version, about)?;
-
+    let options = parse_args_and_init_logging(app_name, version, about)?;
     info!("Product DB Version: {}", env!("CARGO_PKG_VERSION"));
 
-    todo!("Implement the program logic here");
+    let service: Arc<Service<PostgresBackend>> = Arc::new(product_db::Service::new(options).await?);
+
+    // spawn task to wait for the shutdown signal
+    let service_clone = service.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        info!("Received shutdown signal, stopping the service...");
+        service_clone.stop();
+    });
+
+    service.run().await?;
+
+    Ok(())
 }
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() {
     match run_program().await {
         Ok(()) => {

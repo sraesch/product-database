@@ -10,9 +10,9 @@ use crate::{
     sql_types::{
         SQLMissingProduct, SQLProductDescription, SQLRequestedProduct, SQLRequestedProductWithId,
     },
-    DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, ProductDescription,
-    ProductID, ProductImage, ProductQuery, ProductRequest, Result as ProductDBResult, SearchFilter,
-    Secret, SortingField,
+    DBId, DataBackend, Error, MissingProduct, MissingProductQuery, Nutrients, Options,
+    ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest,
+    Result as ProductDBResult, SearchFilter, Secret, SortingField,
 };
 
 type Pool = sqlx::PgPool;
@@ -80,6 +80,11 @@ impl PostgresBackend {
 }
 
 impl DataBackend for PostgresBackend {
+    async fn new(options: &Options) -> ProductDBResult<Self> {
+        let pg_config = options.postgres.clone();
+        Self::new(pg_config).await
+    }
+
     async fn report_missing_product(
         &self,
         missing_product: MissingProduct,

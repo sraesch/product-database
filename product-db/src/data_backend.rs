@@ -5,7 +5,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
+use crate::{
+    MissingProduct, Options, ProductDescription, ProductID, ProductImage, ProductRequest, Result,
+};
 
 pub type DBId = i32;
 
@@ -121,7 +123,13 @@ pub struct ProductQuery {
     pub sorting: Option<Sorting>,
 }
 
-pub trait DataBackend: Send + Sync {
+pub trait DataBackend: Send + Sync + Sized {
+    /// Creates a new instance of the data backend.
+    ///
+    /// # Arguments
+    /// - `options` - The options for the data backend.
+    fn new(options: &Options) -> impl Future<Output = Result<Self>> + Send;
+
     /// Reports a missing product and returns an internal id in the database.
     ///
     /// # Arguments

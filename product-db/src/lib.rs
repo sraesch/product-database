@@ -3,6 +3,7 @@ mod error;
 mod options;
 mod postgres;
 mod secret;
+mod service;
 mod sql_types;
 
 use std::fmt::Display;
@@ -16,6 +17,7 @@ pub use error::*;
 pub use options::*;
 pub use postgres::*;
 pub use secret::*;
+pub use service::*;
 
 /// The id of a single product
 pub type ProductID = String;

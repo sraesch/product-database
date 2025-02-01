@@ -20,6 +20,9 @@ pub enum Error {
     #[error("Invalid sorting: {0} is not supported")]
     InvalidSortingError(SortingField),
 
+    #[error("Network error: {0}")]
+    NetworkError(#[from] tokio::io::Error),
+
     #[error("IO Error: {0}")]
     IO(#[from] Box<std::io::Error>),
 
