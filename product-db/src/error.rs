@@ -1,6 +1,8 @@
 use serde_yaml::Error as YamlError;
 use thiserror::Error;
 
+use crate::SortingField;
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("There has been no message in the queue.")]
@@ -14,6 +16,9 @@ pub enum Error {
 
     #[error("Invalid config: {0}")]
     InvalidConfigError(String),
+
+    #[error("Invalid sorting: {0} is not supported")]
+    InvalidSortingError(SortingField),
 
     #[error("IO Error: {0}")]
     IO(#[from] Box<std::io::Error>),

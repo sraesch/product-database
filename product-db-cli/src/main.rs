@@ -56,13 +56,11 @@ async fn run_program() -> Result<()> {
         env!("CARGO_PKG_DESCRIPTION"),
     );
 
-    let options = parse_args_and_init_logging(app_name, version, about)?;
+    let _options = parse_args_and_init_logging(app_name, version, about)?;
 
     info!("Product DB Version: {}", env!("CARGO_PKG_VERSION"));
 
-    // TODO: Implement the program logic here
-
-    Ok(())
+    todo!("Implement the program logic here");
 }
 
 #[actix_web::main]

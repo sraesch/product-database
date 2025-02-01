@@ -5,6 +5,8 @@
         "dbname",
         "deadpool",
         "dockertest",
+        "GTIN",
+        "initdb",
         "serde",
         "sqlx",
         "thiserror"
