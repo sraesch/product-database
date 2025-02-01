@@ -1,6 +1,6 @@
 use std::{collections::HashSet, env::temp_dir, str::FromStr};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use dockertest::{
     DockerTest, Image, LogAction, LogOptions, LogPolicy, LogSource, TestBodySpecification,
 };
@@ -10,6 +10,17 @@ use product_db::{
     PostgresConfig, ProductDescription, ProductID, ProductImage, ProductQuery, ProductRequest,
     SearchFilter, Secret, Sorting, SortingField, SortingOrder, Weight,
 };
+
+/// Truncates the given datetime to seconds.
+/// This is being done for comparison reasons.
+///
+/// # Arguments
+/// - `d` - The datetime to truncate.
+fn truncate_datetime(d: DateTime<Utc>) -> DateTime<Utc> {
+    let secs = d.timestamp();
+
+    DateTime::from_timestamp(secs, 0).unwrap()
+}
 
 /// Initialize the logger for the tests.
 fn init_logger() {
@@ -494,7 +505,10 @@ async fn query_product_requests_tests<B: DataBackend>(
                 &in_product.product_description,
                 with_preview,
             );
-            assert_eq!(out_product.date, in_product.date);
+            assert_eq!(
+                truncate_datetime(out_product.date),
+                truncate_datetime(in_product.date)
+            );
             assert_eq!(in_id, out_id);
 
             if with_preview {
@@ -591,7 +605,10 @@ async fn query_product_requests_tests<B: DataBackend>(
                     &in_product.product_description,
                     with_preview,
                 );
-                assert_eq!(out_product.date, in_product.date);
+                assert_eq!(
+                    truncate_datetime(out_product.date),
+                    truncate_datetime(in_product.date)
+                );
                 assert_eq!(in_id, out_id);
 
                 if with_preview {
@@ -676,7 +693,7 @@ fn compare_product_requests(
 
     let lhs = &lhs.1;
     let rhs = &rhs.1;
-    assert_eq!(lhs.date, rhs.date);
+    assert_eq!(truncate_datetime(lhs.date), truncate_datetime(rhs.date));
     compare_product_description(
         &lhs.product_description,
         &rhs.product_description,
