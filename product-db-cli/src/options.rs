@@ -1,7 +1,7 @@
 use std::{io::Read, path::PathBuf};
 
 use log::info;
-use product_db::PostgresConfig;
+use product_db::{EndpointOptions, PostgresConfig};
 use serde::Deserialize;
 
 use crate::logging::LogLevel;
@@ -18,8 +18,8 @@ pub struct ProgramOptions {
 #[derive(Debug, Deserialize)]
 pub struct ProgramConfig {
     pub log: LogLevel,
-    /// The address where to expose the controller REST API.
-    pub address: String,
+    /// The service endpoint options.
+    pub endpoint: EndpointOptions,
     /// The Postgres config.
     pub postgres: PostgresConfig,
 }
@@ -34,6 +34,9 @@ impl ProgramConfig {
         info!("Postgres User: {}", self.postgres.user);
         info!("Postgres Password: {}", self.postgres.password);
         info!("Postgres Database: {}", self.postgres.dbname);
+        info!("Endpoint:");
+        info!("Address: {}", self.endpoint.address);
+        info!("Allow Origin: {}", self.endpoint.allow_origin);
     }
 
     pub fn from_reader<R: Read>(r: R) -> Result<Self> {

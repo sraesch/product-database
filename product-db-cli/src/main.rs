@@ -43,7 +43,7 @@ pub fn parse_args_and_init_logging(
     program_config.print_to_log();
 
     Ok(Options {
-        address: program_config.address,
+        endpoint: program_config.endpoint,
         postgres: program_config.postgres,
     })
 }

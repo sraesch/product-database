@@ -1,8 +1,11 @@
 # The logging level
-log = "Info"
+log = "Debug"
 
+[endpoint]
 # The address to bind the controller REST API
 address = "0.0.0.0:3030"
+# CORS allowed origins
+allow_origin = "*"
 
 # Connection details for Postgres
 [postgres]

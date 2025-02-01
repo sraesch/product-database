@@ -4,6 +4,7 @@ mod options;
 mod postgres;
 mod secret;
 mod service;
+pub mod service_json;
 mod sql_types;
 
 use std::fmt::Display;

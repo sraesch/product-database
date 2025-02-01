@@ -1,14 +1,16 @@
-use std::{env::temp_dir, str::FromStr, sync::Arc};
+use std::{collections::HashSet, env::temp_dir, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use dockertest::{
     DockerTest, Image, LogAction, LogOptions, LogPolicy, LogSource, TestBodySpecification,
 };
-use log::info;
+use log::{debug, info};
 use product_db::{
-    DBId, DataBackend, Nutrients, Options, PostgresBackend, PostgresConfig, ProductDescription,
-    ProductRequest, Secret, Service, Weight,
+    service_json::{GetProductRequestResponse, ProductRequestResponse},
+    DBId, DataBackend, EndpointOptions, Nutrients, Options, PostgresBackend, PostgresConfig,
+    ProductDescription, ProductRequest, Secret, Service, Weight,
 };
+use reqwest::{StatusCode, Url};
 
 /// Truncates the given datetime to seconds.
 /// This is being done for comparison reasons.
@@ -187,11 +189,244 @@ fn compare_product_description(
     }
 }
 
+/// Simple client to talk to the service.
+pub struct ServiceClient {
+    server_address: Url,
+    client: reqwest::Client,
+}
+
+impl ServiceClient {
+    pub fn new(server_address: String) -> Self {
+        let server_address = Url::parse(&format!("http://{}", server_address)).unwrap();
+
+        Self {
+            server_address,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Creates a new product request.
+    ///
+    /// # Arguments
+    /// - `product_description` - The product request to create.
+    pub async fn request_new_product(
+        &self,
+        product_description: &ProductDescription,
+    ) -> (DBId, DateTime<Utc>) {
+        let url = self.server_address.join("/admin/product_request").unwrap();
+
+        let response = self
+            .client
+            .post(url)
+            .json(product_description)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let response: ProductRequestResponse = response.json().await.unwrap();
+
+        (response.id.unwrap(), response.date.unwrap())
+    }
+
+    /// Gets the product request with the given id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the product request to get.
+    /// - `with_preview` - Whether to include the preview image in the response.
+    /// - `with_full_image` - Whether to include the full image in the response.
+    pub async fn get_product_request(
+        &self,
+        id: DBId,
+        with_preview: bool,
+        with_full_image: bool,
+    ) -> Option<ProductRequest> {
+        let mut url = self
+            .server_address
+            .join("/admin/product_request/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        if with_preview {
+            url.query_pairs_mut().append_pair("with_preview", "true");
+        }
+
+        if with_full_image {
+            url.query_pairs_mut().append_pair("with_full_image", "true");
+        }
+
+        debug!("GET: {}", url);
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Product request response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert!(status_code == StatusCode::NOT_FOUND || status_code == StatusCode::OK);
+        let response: GetProductRequestResponse = response.json().await.unwrap();
+
+        debug!("Product request response: {:?}", response);
+
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        assert_eq!(status_code, StatusCode::OK);
+
+        response.product_request
+    }
+}
+
+/// Runs the product requests tests against the service.
+///
+/// # Arguments
+/// - `options` - The endpoint options.
+async fn product_requests_tests(options: &EndpointOptions) {
+    let client = ServiceClient::new(options.address.clone());
+
+    // load the products from the test_data/products.json file
+    let products = load_products();
+
+    // request the products in the list
+    let mut ids = Vec::new();
+    let mut product_requests: Vec<ProductRequest> = Vec::new();
+    let mut product_requests_with_ids = Vec::new();
+    for product_desc in products.iter() {
+        let (id, date) = client.request_new_product(product_desc).await;
+        info!("Requested product with id: {}", id);
+
+        ids.push(id);
+        product_requests.push(ProductRequest {
+            date,
+            product_description: product_desc.clone(),
+        });
+
+        product_requests_with_ids.push((id, product_requests.last().unwrap().clone()));
+    }
+
+    info!("Requested products with ids: {:?}", ids);
+
+    // make sure ids are all unique
+    assert_eq!(
+        HashSet::<_>::from_iter(ids.iter().cloned()).len(),
+        ids.len()
+    );
+
+    // check if the requested products are the same as the inserted ones by using the get_product_request method
+    for with_preview in [true, false] {
+        for (id, in_product) in ids.iter().zip(products.iter()) {
+            let product_request = client
+                .get_product_request(*id, with_preview, with_preview)
+                .await
+                .unwrap();
+
+            let out_product = &product_request.product_description;
+            compare_product_description(out_product, in_product, with_preview);
+
+            if with_preview {
+                // if the preview flag is set, we also test getting the full image of the product
+                assert_eq!(
+                    product_request.product_description.full_image,
+                    in_product.full_image
+                );
+            }
+        }
+    }
+
+    // // execute the querying product requests tests
+    // query_product_requests_tests(backend, product_requests_with_ids.as_slice()).await;
+
+    // // add the first product request again, but modify it slightly
+    // let mut modified_product_request = product_requests[0].clone();
+    // modified_product_request.product_description.info.name += "Modified Name";
+    // ids.push(
+    //     backend
+    //         .request_new_product(&modified_product_request)
+    //         .await
+    //         .unwrap(),
+    // );
+
+    // // now query the modified product request
+    // let product_requests = backend
+    //     .query_product_requests(
+    //         &ProductQuery {
+    //             limit: 40,
+    //             offset: 0,
+    //             filter: SearchFilter::ProductID(
+    //                 modified_product_request.product_description.info.id.clone(),
+    //             ),
+    //             sorting: None,
+    //         },
+    //         false,
+    //     )
+    //     .await
+    //     .unwrap();
+
+    // assert_eq!(product_requests.len(), 2);
+    // assert_eq!(product_requests[0].0, ids[0]);
+    // assert_eq!(product_requests[1].0, ids[ids.len() - 1]);
+
+    // // delete the first 2 requested products
+    // backend.delete_requested_product(ids[0]).await.unwrap();
+    // backend.delete_requested_product(ids[1]).await.unwrap();
+
+    // assert_eq!(
+    //     backend.get_product_request(ids[0], true).await.unwrap(),
+    //     None
+    // );
+    // assert_eq!(
+    //     backend.get_product_request(ids[1], true).await.unwrap(),
+    //     None
+    // );
+    // assert_eq!(
+    //     backend.get_product_request(ids[0], false).await.unwrap(),
+    //     None
+    // );
+    // assert_eq!(
+    //     backend.get_product_request(ids[1], false).await.unwrap(),
+    //     None
+    // );
+
+    // // delete the first 2 requested products again ... nothing should happen
+    // backend.delete_requested_product(ids[0]).await.unwrap();
+    // backend.delete_requested_product(ids[1]).await.unwrap();
+
+    // // check that the last requested product is still there
+    // for with_preview in [true, false] {
+    //     let product_request = backend
+    //         .get_product_request(ids[2], with_preview)
+    //         .await
+    //         .unwrap()
+    //         .unwrap();
+
+    //     let out_product = &product_request.product_description;
+    //     let in_product = &products[2];
+
+    //     compare_product_description(out_product, in_product, with_preview);
+    //     if with_preview {
+    //         // if the preview flag is set, we also test getting the full image of the product
+    //         let full_image: Option<ProductImage> =
+    //             backend.get_product_request_image(ids[2]).await.unwrap();
+    //         assert_eq!(full_image, in_product.full_image);
+    //     }
+    // }
+}
+
 /// Runs the service tests with the given backend.
 ///
 /// # Arguments
 /// - `options` - The options for initializing the service.
 async fn service_tests<B: DataBackend + 'static>(options: Options) {
+    let endpoint_options = options.endpoint.clone();
+
     info!("TEST: Creating service instance...");
     let service: Arc<Service<B>> = Arc::new(Service::new(options).await.unwrap());
     let service_clone = service.clone();
@@ -202,7 +437,10 @@ async fn service_tests<B: DataBackend + 'static>(options: Options) {
 
     // spawn a task that will stop the service after 1 second
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        info!("Running product requests tests...");
+        product_requests_tests(&endpoint_options).await;
+        info!("Running product requests tests...SUCCESS");
+
         service_clone.stop();
     });
 
@@ -212,6 +450,11 @@ async fn service_tests<B: DataBackend + 'static>(options: Options) {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_service() {
     const SERVICE_ADDRESS: &str = "0.0.0.0:8888";
+
+    let endpoint_options = EndpointOptions {
+        address: SERVICE_ADDRESS.to_string(),
+        ..Default::default()
+    };
 
     init_logger();
 
@@ -229,7 +472,7 @@ async fn test_service() {
 
         let options = Options {
             postgres: options,
-            address: SERVICE_ADDRESS.to_string(),
+            endpoint: endpoint_options,
         };
 
         info!("Running service tests...");
@@ -298,7 +541,7 @@ async fn test_service() {
 
         let options = Options {
             postgres: postgres_options,
-            address: SERVICE_ADDRESS.to_string(),
+            endpoint: endpoint_options,
         };
 
         info!("Running service tests...");

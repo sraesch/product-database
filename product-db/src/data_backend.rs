@@ -85,8 +85,9 @@ pub struct Sorting {
 }
 
 /// The search filter for the query results.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum SearchFilter {
+    #[default]
     #[serde(rename = "no_filter")]
     NoFilter,
 
@@ -113,13 +114,16 @@ impl SearchFilter {
 /// The query parameters for querying the products.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProductQuery {
+    #[serde(default)]
     /// The offset of the query results.
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,
     /// The filter to apply to the query results.
+    #[serde(default)]
     pub filter: SearchFilter,
     /// The sorting parameters for the query results (optional).
+    #[serde(default)]
     pub sorting: Option<Sorting>,
 }
 

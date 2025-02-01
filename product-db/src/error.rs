@@ -5,11 +5,11 @@ use crate::SortingField;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("There has been no message in the queue.")]
-    MessageQueueNoMessage,
-
     #[error("Failed parsing the config: {0}")]
     ParsingConfigError(#[from] Box<YamlError>),
+
+    #[error("Failed loading the config: {0}")]
+    ConfigError(String),
 
     #[error("Serialization error: {0}")]
     Serialization(#[from] Box<serde_json::Error>),

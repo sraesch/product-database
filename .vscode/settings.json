@@ -7,8 +7,10 @@
         "dockertest",
         "GTIN",
         "initdb",
+        "reqwest",
         "serde",
         "sqlx",
-        "thiserror"
+        "thiserror",
+        "urlencoding"
     ]
 }
