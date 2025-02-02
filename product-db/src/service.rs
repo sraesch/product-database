@@ -121,10 +121,10 @@ impl<DB: DataBackend + 'static> Service<DB> {
             .allow_origin(allow_origins);
 
         let admin_app = Self::setup_admin_endpoint();
-        let read_only_app = Self::setup_read_only_endpoint();
+        let user_app = Self::setup_user_endpoint();
 
         let app = Router::new();
-        let app = app.nest("/admin", admin_app).nest("/read", read_only_app);
+        let app = app.nest("/admin", admin_app).nest("/user", user_app);
         let app = app.layer(cors).with_state(db);
 
         Ok(app)
@@ -134,26 +134,25 @@ impl<DB: DataBackend + 'static> Service<DB> {
     fn setup_admin_endpoint() -> Router<Arc<DB>> {
         let app = Router::new();
 
-        app.route("/product_request", post(Self::handle_product_request))
-            .route(
-                "/product_request/{request_id}",
-                delete(Self::handle_delete_product_request),
-            )
-            .route(
-                "/product_request/{request_id}",
-                get(Self::handle_get_product_request),
-            )
-            .route(
-                "/product_request/query",
-                get(Self::handle_product_request_query),
-            )
+        app.route(
+            "/product_request/{request_id}",
+            delete(Self::handle_delete_product_request),
+        )
+        .route(
+            "/product_request/{request_id}",
+            get(Self::handle_get_product_request),
+        )
+        .route(
+            "/product_request/query",
+            get(Self::handle_product_request_query),
+        )
     }
 
-    /// Sets up the read-only endpoint.
-    fn setup_read_only_endpoint() -> Router<Arc<DB>> {
+    /// Sets up the user endpoint.
+    fn setup_user_endpoint() -> Router<Arc<DB>> {
         let app = Router::new();
 
-        app
+        app.route("/product_request", post(Self::handle_product_request))
     }
 
     /// POST: Handles a requesting a new product.

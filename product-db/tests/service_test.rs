@@ -243,7 +243,7 @@ impl ServiceClient {
         &self,
         product_description: &ProductDescription,
     ) -> (DBId, DateTime<Utc>) {
-        let url = self.server_address.join("/admin/product_request").unwrap();
+        let url = self.server_address.join("/user/product_request").unwrap();
 
         let response = self
             .client
