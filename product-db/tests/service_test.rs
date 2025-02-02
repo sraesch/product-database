@@ -322,16 +322,12 @@ impl ServiceClient {
         &self,
         query: &ProductQuery,
     ) -> Vec<(DBId, ProductRequest)> {
-        let mut url = self
+        let url = self
             .server_address
             .join("/admin/product_request/query")
             .unwrap();
 
-        debug!("GET: {}", url);
-        let query_str = serde_qs::to_string(query).unwrap();
-        url.set_query(Some(query_str.as_str()));
-
-        let response = self.client.get(url).send().await.unwrap();
+        let response = self.client.post(url).json(query).send().await.unwrap();
         debug!(
             "Product request response: status={}, length={}",
             response.status(),

@@ -144,7 +144,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
         )
         .route(
             "/product_request/query",
-            get(Self::handle_product_request_query),
+            post(Self::handle_product_request_query),
         )
     }
 
@@ -288,29 +288,12 @@ impl<DB: DataBackend + 'static> Service<DB> {
         }
     }
 
-    /// GET: Handles executing a product request query.
+    /// POST: Handles executing a product request query.
     async fn handle_product_request_query(
         State(state): State<Arc<DB>>,
-        RawQuery(query): RawQuery,
+        Json(query): Json<ProductQuery>,
     ) -> (StatusCode, Json<ProductRequestQueryResponse>) {
-        let query_string = query.unwrap_or_default();
-        trace!("Get product request query [Raw]: {:?}", query_string);
-        let query_string = urlencoding::decode(&query_string).unwrap_or_default();
-        debug!("Get product request query [Decoded]: {:?}", query_string);
-
-        let query: ProductQuery = match serde_qs::from_str(&query_string) {
-            Ok(query) => query,
-            Err(err) => {
-                error!("Failed to parse product request query: {}", err);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ProductRequestQueryResponse {
-                        message: err.to_string(),
-                        product_requests: Vec::new(),
-                    }),
-                );
-            }
-        };
+        debug!("Get product request query [Decoded]: {:?}", query);
 
         match state.query_product_requests(&query, true).await {
             Ok(result) => {

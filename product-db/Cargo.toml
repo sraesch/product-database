@@ -23,8 +23,6 @@ sqlx = { version = "0.8", features = [
 load_image = "3.2"
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
-serde_qs = "0.13"
-urlencoding = "2.1"
 
 [dev-dependencies]
 dockertest = "0.5"

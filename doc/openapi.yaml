@@ -74,42 +74,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeletingProductRequestResponse'
   /admin/product_request/query:
-    get:
+    post:
       summary: Queries product requests
       description: Queries the product requests based on the given query parameter
       operationId: query_product_requests
-      parameters:
-        - name: offset
-          in: query
-          description: The offset of the query results.
-          required: false
-          schema:
-            type: integer
-            format: int32
-            default: 0
-        - name: limit
-          in: query
-          description: The limit of the query results.
-          required: true
-          schema:
-            type: integer
-            format: int32
-        - name: sorting[field]
-          in: query
-          description: The field to sort the results by.
-          required: false
-          schema: 
-            type: string
-            enum: [date, name, product_id, similarity]
-        - name: sorting[order]
-          in: query
-          description: The order of the sorting.
-          required: false
-          schema:
-            type: string
-            enum:
-              - asc
-              - desc
+      requestBody: 
+        description: The product request query
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductQuery'
       responses:
         '200':
           description: The product requests
@@ -340,3 +315,58 @@ components:
         properties: 
           message:
             type: string
+    SortingOrder:
+      type: string
+      enum:
+        - asc
+        - desc
+      description: The sorting order for the query results.
+    SortingField:
+      type: string
+      enum:
+        - reported_date
+        - product_name
+        - product_id
+        - similarity
+      description: The sorting field for the query results.
+    Sorting:
+      type: object
+      required: 
+        -  order
+        -  field
+      properties:
+        order:
+          $ref: '#/components/schemas/SortingOrder'
+        field:
+          $ref: '#/components/schemas/SortingField'
+      description: The sorting parameters for the query results.
+    SearchFilter:
+      oneOf:
+        - type:  string
+          enum: ["no_filter"]
+          description: No filter applied (default).
+        - type: object
+          properties:
+            search:
+              type: string
+          description: Search query to filter the results by.
+        - type: object
+          properties:
+            product_id:
+              type: string
+          description: Product ID to filter the results by.
+    ProductQuery:
+      type: object
+      required: 
+        -  limit
+      properties:
+        offset:
+          type: integer
+          default: 0
+        limit:
+          type: integer
+        filter:
+          $ref: '#/components/schemas/SearchFilter'
+        sorting:
+          $ref: '#/components/schemas/Sorting'
+      description: The query parameters for querying the products.

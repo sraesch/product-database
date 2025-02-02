@@ -114,8 +114,8 @@ impl SearchFilter {
 /// The query parameters for querying the products.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProductQuery {
-    #[serde(default)]
     /// The offset of the query results.
+    #[serde(default)]
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,
