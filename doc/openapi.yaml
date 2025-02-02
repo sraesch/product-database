@@ -1,0 +1,342 @@
+openapi: 3.0.2
+info:
+  title: Product Database API
+  license: 
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: API to manage a product database
+  version: 0.1.0
+servers:
+  - url: /v1
+    description: The API endpoint for the product database
+paths:
+  /admin/product_request/{id}:
+    get:
+      summary: Gets a product request
+      description: Gets the details of a product request
+      operationId: get_product_request
+      parameters:
+        - name: id
+          in: path
+          description: The id of the product request
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: The product request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetProductRequestResponseSuccess'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetProductRequestResponseFailed'
+        '404':
+          description: The product request does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetProductRequestResponseFailed'
+    delete: 
+      summary: Deletes a product request
+      description: Deletes a product request from the database
+      operationId: delete_product_request
+      parameters: 
+        - name: id
+          in: path
+          description: The id of the product request
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: The product request has been successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletingProductRequestResponse'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletingProductRequestResponse'
+        '404':
+          description: The product request does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletingProductRequestResponse'
+  /admin/product_request/query:
+    get:
+      summary: Queries product requests
+      description: Queries the product requests based on the given query parameter
+      operationId: query_product_requests
+      parameters:
+        - name: offset
+          in: query
+          description: The offset of the query results.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          description: The limit of the query results.
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: sorting[field]
+          in: query
+          description: The field to sort the results by.
+          required: false
+          schema: 
+            type: string
+            enum: [date, name, product_id, similarity]
+        - name: sorting[order]
+          in: query
+          description: The order of the sorting.
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        '200':
+          description: The product requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductRequest'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetProductRequestResponseFailed'
+  /user/product_request:
+    post:
+      summary: Posts a product request
+      description: Posts a request for a new product to be added or changed to the database
+      operationId: request_new_product
+      requestBody: 
+        description: The details of the requested product
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDescription'
+      responses:
+        '201':
+          description: Request has been successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRequestResponse'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRequestResponse'
+components:
+  schemas:
+    ProductRequestResponse:
+      type: object
+      required: 
+        -  message
+      properties:
+        message:
+          type: string
+        date:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+    QuantityType:
+      type: string
+      enum:
+        - weight
+        - volume
+    ProductImage:
+      type: object
+      properties:
+        contentType:
+          type: string
+          description: "The content type of the preview image."
+        data:
+          type: string
+          format: byte
+          description: "The base64 encoded image."
+      required:
+        - contentType
+        - data
+    Weight:
+      type: object
+      properties:
+        value:
+          type: number
+          format: float
+          description: "The weight value expressed in gram."
+      required:
+        - value
+    ProductInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "The id of the product. Can be EAN, GTIN, or any other unique identifier."
+        name:
+          type: string
+          description: "The name of the product."
+        producer:
+          type: string
+          description: "The company that produces the product."
+          nullable: true
+        quantity_type:
+          $ref: '#/components/schemas/QuantityType'
+          description: "The type of quantity the product is measured in."
+        portion:
+          type: number
+          format: float
+          description: "The amount for one portion of the product in grams or ml depending on the quantity type."
+        volume_weight_ratio:
+          type: number
+          format: float
+          nullable: true
+          description: "The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio. Is only defined if the quantity type is volume."
+
+      required:
+        - id
+        - name
+        - quantity_type
+        - portion
+    Nutrients:
+      type: object
+      properties:
+        kcal:
+          type: number
+          format: float
+          description: "The calories (kcal) for a reference quantity of 100g."
+        protein:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of protein (in grams) for a reference quantity of 100g."
+          nullable: true
+        fat:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of fat (in grams) for a reference quantity of 100g."
+          nullable: true
+        carbohydrates:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of carbohydrates (in grams) for a reference quantity of 100g."
+          nullable: true
+        sugar:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of sugar (in grams) for a reference quantity of 100g."
+          nullable: true
+        salt:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of salt (in grams) for a reference quantity of 100g."
+          nullable: true
+        vitaminA:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of vitamin A (in grams) for a reference quantity of 100g."
+          nullable: true
+        vitaminC:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of vitamin C (in grams) for a reference quantity of 100g."
+          nullable: true
+        vitaminD:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of vitamin D (in grams) for a reference quantity of 100g."
+          nullable: true
+        iron:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of iron (in grams) for a reference quantity of 100g."
+          nullable: true
+        calcium:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of calcium (in grams) for a reference quantity of 100g."
+          nullable: true
+        magnesium:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of magnesium (in grams) for a reference quantity of 100g."
+          nullable: true
+        sodium:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of sodium (in grams) for a reference quantity of 100g."
+          nullable: true
+        zinc:
+          $ref: '#/components/schemas/Weight'
+          description: "The amount of zinc (in grams) for a reference quantity of 100g."
+          nullable: true
+      required:
+        - kcal
+    ProductDescription:
+        type: object
+        description: The full information about a product consisting of the product id, name, producer, nutrients, and images.
+        properties:
+          info:
+            $ref: '#/components/schemas/ProductInfo'
+          preview:
+            $ref: '#/components/schemas/ProductImage'
+            nullable: true
+          full_image:
+            $ref: '#/components/schemas/ProductImage'
+            nullable: true
+          nutrients:
+            $ref: '#/components/schemas/Nutrients'
+        required:
+          - info
+          - nutrients
+    ProductRequest:
+        type: object
+        description: The details of a product request.
+        properties:
+          product_description:
+            $ref: "#/components/schemas/ProductDescription"
+          date:
+            type: string
+            format: date-time
+        required: 
+          -  product_description
+          -  date
+    GetProductRequestResponseSuccess:
+        type: object
+        description: The successful response to a get product request operation.
+        required: 
+          -  message
+          -  product_request
+        properties: 
+          message:
+            type: string
+          product_request:
+            $ref: "#/components/schemas/ProductRequest"
+    GetProductRequestResponseFailed:
+        type: object
+        description: The failed response to a get product request operation.
+        required: 
+          -  message
+        properties: 
+          message:
+            type: string
+    DeletingProductRequestResponse:
+        type: object
+        description: The response to a delete product request operation.
+        required: 
+          -  message
+        properties: 
+          message:
+            type: string
