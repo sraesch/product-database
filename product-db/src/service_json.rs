@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{DBId, ProductRequest};
+use crate::{DBId, ProductID, ProductRequest};
 
 /// The response to a request to add a new product to the database.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -9,6 +9,15 @@ pub struct ProductRequestResponse {
     pub message: String,
     pub date: Option<DateTime<Utc>>,
     pub id: Option<DBId>,
+}
+
+/// The response to a reported missing product.
+pub type MissingProductReportResponse = ProductRequestResponse;
+
+/// The request to report a missing product.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissingProductReportRequest {
+    pub product_id: ProductID,
 }
 
 /// The response to a request to add a new product to the database.

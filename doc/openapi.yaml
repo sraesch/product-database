@@ -100,6 +100,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GetProductRequestResponseFailed'
+  /user/missing_product:
+    post:
+      summary: Reports a missing product
+      description: Reports a product that is missing in the database
+      operationId: report_missing_product
+      requestBody: 
+        description: The details of the missing product report
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissingProductReportRequest'
+      responses:
+        '201':
+          description: The missing product has been successfully reported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingProductReportResponse'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingProductReportResponse'
+
   /user/product_request:
     post:
       summary: Posts a product request
@@ -370,3 +396,24 @@ components:
         sorting:
           $ref: '#/components/schemas/Sorting'
       description: The query parameters for querying the products.
+    MissingProductReportRequest:
+      type: object
+      required: 
+        -  product_id
+      properties:
+        product_id:
+          type: string
+      description: The details of a missing product report.
+    MissingProductReportResponse:
+      type: object
+      required: 
+        -  message
+      properties:
+        message:
+          type: string
+        date:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32

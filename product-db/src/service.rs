@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, RawQuery, State},
+    extract::{Path, Query, State},
     http::{HeaderValue, Method, StatusCode},
     routing::{delete, get, post},
     Json, Router,
 };
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, warn};
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::{service_json::*, ProductQuery};
+use crate::{service_json::*, MissingProduct, ProductQuery};
 
 use crate::{
     DBId, DataBackend, EndpointOptions, Error, Options, ProductDescription, ProductRequest, Result,
@@ -124,7 +124,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
         let user_app = Self::setup_user_endpoint();
 
         let app = Router::new();
-        let app = app.nest("/admin", admin_app).nest("/user", user_app);
+        let app = app.nest("/v1/admin", admin_app).nest("/v1/user", user_app);
         let app = app.layer(cors).with_state(db);
 
         Ok(app)
@@ -153,6 +153,10 @@ impl<DB: DataBackend + 'static> Service<DB> {
         let app = Router::new();
 
         app.route("/product_request", post(Self::handle_product_request))
+            .route(
+                "/missing_product",
+                post(Self::handle_report_missing_product),
+            )
     }
 
     /// POST: Handles a requesting a new product.
@@ -186,6 +190,45 @@ impl<DB: DataBackend + 'static> Service<DB> {
                     Json(ProductRequestResponse {
                         message: err.to_string(),
                         date: None,
+                        id: None,
+                    }),
+                )
+            }
+        }
+    }
+
+    /// POST: Handles reporting a missing product.
+    async fn handle_report_missing_product(
+        State(state): State<Arc<DB>>,
+        Json(payload): Json<MissingProductReportRequest>,
+    ) -> (StatusCode, Json<MissingProductReportResponse>) {
+        debug!("Received missing product report: {:?}", payload);
+
+        let date = chrono::Utc::now();
+        let missing_product = MissingProduct {
+            product_id: payload.product_id,
+            date: date.clone(),
+        };
+
+        match state.report_missing_product(missing_product).await {
+            Ok(id) => {
+                info!("Received missing product report successfully");
+                (
+                    StatusCode::CREATED,
+                    Json(MissingProductReportResponse {
+                        message: "Received missing product report successfully".to_string(),
+                        date: Some(date),
+                        id: Some(id),
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Received missing product report failed: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(MissingProductReportResponse {
+                        message: err.to_string(),
+                        date: Some(date),
                         id: None,
                     }),
                 )
