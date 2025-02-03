@@ -34,6 +34,7 @@ impl Display for SortingOrder {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MissingProductQuery {
     /// The offset of the query results.
+    #[serde(default)]
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,

@@ -6,13 +6,9 @@ use dockertest::{
 };
 use log::{debug, info};
 use product_db::{
-    service_json::{
-        DeletingProductRequestResponse, GetProductRequestResponse, ProductRequestQueryResponse,
-        ProductRequestResponse,
-    },
-    DBId, DataBackend, EndpointOptions, Nutrients, Options, PostgresBackend, PostgresConfig,
-    ProductDescription, ProductID, ProductQuery, ProductRequest, SearchFilter, Secret, Service,
-    Sorting, SortingField, SortingOrder, Weight,
+    service_json::*, DBId, DataBackend, EndpointOptions, Nutrients, Options, PostgresBackend,
+    PostgresConfig, ProductDescription, ProductID, ProductQuery, ProductRequest, SearchFilter,
+    Secret, Service, Sorting, SortingField, SortingOrder, Weight,
 };
 use reqwest::{StatusCode, Url};
 
@@ -227,7 +223,7 @@ pub struct ServiceClient {
 
 impl ServiceClient {
     pub fn new(server_address: String) -> Self {
-        let server_address = Url::parse(&format!("http://{}", server_address)).unwrap();
+        let server_address = Url::parse(&format!("http://{}/v1/", server_address)).unwrap();
 
         Self {
             server_address,
@@ -243,7 +239,8 @@ impl ServiceClient {
         &self,
         product_description: &ProductDescription,
     ) -> (DBId, DateTime<Utc>) {
-        let url = self.server_address.join("/user/product_request").unwrap();
+        let url = self.server_address.join("user/product_request").unwrap();
+        debug!("POST: {}", url);
 
         let response = self
             .client
@@ -274,7 +271,7 @@ impl ServiceClient {
     ) -> Option<ProductRequest> {
         let mut url = self
             .server_address
-            .join("/admin/product_request/")
+            .join("admin/product_request/")
             .unwrap()
             .join(&id.to_string())
             .unwrap();
@@ -324,9 +321,10 @@ impl ServiceClient {
     ) -> Vec<(DBId, ProductRequest)> {
         let url = self
             .server_address
-            .join("/admin/product_request/query")
+            .join("admin/product_request/query")
             .unwrap();
 
+        debug!("POST: {}", url);
         let response = self.client.post(url).json(query).send().await.unwrap();
         debug!(
             "Product request response: status={}, length={}",
@@ -348,7 +346,7 @@ impl ServiceClient {
     pub async fn delete_requested_product(&self, id: DBId) {
         let url = self
             .server_address
-            .join("/admin/product_request/")
+            .join("admin/product_request/")
             .unwrap()
             .join(&id.to_string())
             .unwrap();
@@ -363,7 +361,7 @@ impl ServiceClient {
         );
         let status_code = response.status();
         assert_eq!(status_code, StatusCode::OK);
-        let response: DeletingProductRequestResponse = response.json().await.unwrap();
+        let response: OnlyMessageResponse = response.json().await.unwrap();
 
         debug!("Delete product request response: {:?}", response);
     }

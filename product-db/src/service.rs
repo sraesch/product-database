@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::{service_json::*, MissingProduct, ProductQuery};
+use crate::{service_json::*, MissingProduct, MissingProductQuery, ProductQuery};
 
 use crate::{
     DBId, DataBackend, EndpointOptions, Error, Options, ProductDescription, ProductRequest, Result,
@@ -146,6 +146,18 @@ impl<DB: DataBackend + 'static> Service<DB> {
             "/product_request/query",
             post(Self::handle_product_request_query),
         )
+        .route(
+            "/missing_products/query",
+            post(Self::handle_missing_products_query),
+        )
+        .route(
+            "/missing_products/{id}",
+            get(Self::handle_get_missing_product),
+        )
+        .route(
+            "/missing_products/{id}",
+            delete(Self::handle_delete_missing_product),
+        )
     }
 
     /// Sets up the user endpoint.
@@ -154,7 +166,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
 
         app.route("/product_request", post(Self::handle_product_request))
             .route(
-                "/missing_product",
+                "/missing_products",
                 post(Self::handle_report_missing_product),
             )
     }
@@ -207,7 +219,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
         let date = chrono::Utc::now();
         let missing_product = MissingProduct {
             product_id: payload.product_id,
-            date: date.clone(),
+            date,
         };
 
         match state.report_missing_product(missing_product).await {
@@ -240,7 +252,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
     async fn handle_delete_product_request(
         State(state): State<Arc<DB>>,
         Path(request_id): Path<DBId>,
-    ) -> (StatusCode, Json<DeletingProductRequestResponse>) {
+    ) -> (StatusCode, Json<OnlyMessageResponse>) {
         debug!("Deleting product request with id={}", request_id);
 
         match state.delete_requested_product(request_id).await {
@@ -248,7 +260,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
                 info!("Deleting product request with id={} successful", request_id);
                 (
                     StatusCode::OK,
-                    Json(DeletingProductRequestResponse {
+                    Json(OnlyMessageResponse {
                         message: "Product request deleted.".to_string(),
                     }),
                 )
@@ -257,7 +269,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
                 error!("Failed to receive product request: {}", err);
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(DeletingProductRequestResponse {
+                    Json(OnlyMessageResponse {
                         message: err.to_string(),
                     }),
                 )
@@ -356,6 +368,116 @@ impl<DB: DataBackend + 'static> Service<DB> {
                     Json(ProductRequestQueryResponse {
                         message: err.to_string(),
                         product_requests: Vec::new(),
+                    }),
+                )
+            }
+        }
+    }
+
+    /// POST: Handles executing a product request query.
+    async fn handle_missing_products_query(
+        State(state): State<Arc<DB>>,
+        Json(query): Json<MissingProductQuery>,
+    ) -> (StatusCode, Json<MissingProductsQueryResponse>) {
+        debug!("Get missing product query: {:?}", query);
+
+        match state.query_missing_products(&query).await {
+            Ok(result) => {
+                info!("Missing products query successful: {:?}", query);
+                (
+                    StatusCode::OK,
+                    Json(MissingProductsQueryResponse {
+                        message: "Query executed successful".to_string(),
+                        missing_products: result,
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to receive product request: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(MissingProductsQueryResponse {
+                        message: err.to_string(),
+                        missing_products: Vec::new(),
+                    }),
+                )
+            }
+        }
+    }
+
+    /// GET: Handles getting reported missing product.
+    async fn handle_get_missing_product(
+        State(state): State<Arc<DB>>,
+        Path(request_id): Path<DBId>,
+    ) -> (StatusCode, Json<GetReportedMissingProductResponse>) {
+        debug!("Get reported missing product with id={}", request_id);
+
+        match state.get_missing_product(request_id).await {
+            Ok(Some(missing_product)) => {
+                info!(
+                    "Get reported missing product with id={} successful",
+                    request_id
+                );
+                (
+                    StatusCode::OK,
+                    Json(GetReportedMissingProductResponse {
+                        message: "Reported missing product found.".to_string(),
+                        missing_product: Some(missing_product),
+                    }),
+                )
+            }
+            Ok(None) => {
+                info!("Reported missing product with id={} not found", request_id);
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(GetReportedMissingProductResponse {
+                        message: format!(
+                            "Reported missing product with id={} not found",
+                            request_id
+                        ),
+                        missing_product: None,
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to receive reported missing product: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(GetReportedMissingProductResponse {
+                        message: err.to_string(),
+                        missing_product: None,
+                    }),
+                )
+            }
+        }
+    }
+
+    /// DELETE: Handles deleting a reported missing product.
+    async fn handle_delete_missing_product(
+        State(state): State<Arc<DB>>,
+        Path(report_id): Path<DBId>,
+    ) -> (StatusCode, Json<OnlyMessageResponse>) {
+        debug!("Deleting reported missing product with id={}", report_id);
+
+        match state.delete_reported_missing_product(report_id).await {
+            Ok(()) => {
+                info!(
+                    "Deleting reported missing product with id={} successful",
+                    report_id
+                );
+                (
+                    StatusCode::OK,
+                    Json(OnlyMessageResponse {
+                        message: "Product request deleted.".to_string(),
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to receive product request: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(OnlyMessageResponse {
+                        message: err.to_string(),
                     }),
                 )
             }
