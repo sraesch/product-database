@@ -6,9 +6,10 @@ use dockertest::{
 };
 use log::{debug, info};
 use product_db::{
-    service_json::*, DBId, DataBackend, EndpointOptions, Nutrients, Options, PostgresBackend,
-    PostgresConfig, ProductDescription, ProductID, ProductQuery, ProductRequest, SearchFilter,
-    Secret, Service, Sorting, SortingField, SortingOrder, Weight,
+    service_json::*, DBId, DataBackend, EndpointOptions, MissingProduct, MissingProductQuery,
+    Nutrients, Options, PostgresBackend, PostgresConfig, ProductDescription, ProductID,
+    ProductQuery, ProductRequest, SearchFilter, Secret, Service, Sorting, SortingField,
+    SortingOrder, Weight,
 };
 use reqwest::{StatusCode, Url};
 
@@ -365,6 +366,264 @@ impl ServiceClient {
 
         debug!("Delete product request response: {:?}", response);
     }
+
+    /// Reports a missing product.
+    ///
+    /// # Arguments
+    /// - `product_id` - The missing product id to report.
+    pub async fn report_missing_product(&self, product_id: ProductID) -> (DBId, DateTime<Utc>) {
+        let url = self.server_address.join("user/missing_products").unwrap();
+
+        debug!("POST: {}", url);
+
+        let missing_product = MissingProductReportRequest { product_id };
+
+        let response = self
+            .client
+            .post(url)
+            .json(&missing_product)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let response: MissingProductReportResponse = response.json().await.unwrap();
+
+        (response.id.unwrap(), response.date.unwrap())
+    }
+
+    /// Queries the missing products with the given query.
+    ///
+    /// # Arguments
+    /// - `query` - The query to use.
+    pub async fn query_missing_products(
+        &self,
+        query: &MissingProductQuery,
+    ) -> Vec<(DBId, MissingProduct)> {
+        let url = self
+            .server_address
+            .join("admin/missing_products/query")
+            .unwrap();
+
+        debug!("POST: {}", url);
+
+        let response = self.client.post(url).json(query).send().await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response: MissingProductsQueryResponse = response.json().await.unwrap();
+
+        response.missing_products
+    }
+
+    /// Gets the missing product with the given id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the missing product to get.
+    pub async fn get_missing_product(&self, id: DBId) -> Option<MissingProduct> {
+        let url = self
+            .server_address
+            .join("admin/missing_products/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        debug!("GET: {}", url);
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Missing product response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert!(status_code == StatusCode::NOT_FOUND || status_code == StatusCode::OK);
+        let response: GetReportedMissingProductResponse = response.json().await.unwrap();
+
+        debug!("Missing product response: {:?}", response);
+
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        assert_eq!(status_code, StatusCode::OK);
+
+        response.missing_product
+    }
+
+    /// Deletes the missing product with the given id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the missing product to delete.
+    pub async fn delete_reported_missing_product(&self, id: DBId) {
+        let url = self
+            .server_address
+            .join("admin/missing_products/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        debug!("DELETE: {}", url);
+
+        let response = self.client.delete(url).send().await.unwrap();
+        debug!(
+            "Delete missing product response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert_eq!(status_code, StatusCode::OK);
+        let response: OnlyMessageResponse = response.json().await.unwrap();
+
+        debug!("Delete missing product response: {:?}", response);
+    }
+}
+
+/// Runs the missing product tests against the service instance.
+///
+/// # Arguments
+/// - `options` - The endpoint options.
+async fn missing_product_tests(options: &EndpointOptions) {
+    let client = ServiceClient::new(options.address.clone());
+    // load the missing products to report and sort them by date in ascending order
+    let mut products_to_report: Vec<MissingProduct> =
+        serde_json::from_str(include_str!("missing_products.json")).unwrap();
+    products_to_report.sort_by_key(|p| p.date);
+
+    // insert the missing products
+    let mut ids = Vec::new();
+    for product in products_to_report.iter_mut() {
+        let (id, date) = client
+            .report_missing_product(product.product_id.clone())
+            .await;
+        ids.push(id);
+
+        product.date = date;
+    }
+
+    // make sure ids are all unique
+    assert_eq!(
+        HashSet::<_>::from_iter(ids.iter().cloned()).len(),
+        ids.len()
+    );
+
+    // query the reported missing products
+    let missing_products = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: None,
+            order: SortingOrder::Ascending,
+        })
+        .await;
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report
+    );
+
+    // use the get_missing_product method to check if the reported missing products are the same as the inserted ones
+    for (id, product) in missing_products.iter() {
+        let missing_product = client.get_missing_product(*id).await;
+        assert_eq!(missing_product, Some(product.clone()));
+    }
+
+    // query the reported missing products in descending order
+    let missing_products_desc = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: None,
+            order: SortingOrder::Descending,
+        })
+        .await;
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products_desc
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report
+            .iter()
+            .rev()
+            .cloned()
+            .collect::<Vec<MissingProduct>>()
+    );
+
+    // use offset and limit to query the reported missing products
+    let missing_products_offset = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 2,
+            offset: 2,
+            product_id: None,
+            order: SortingOrder::Ascending,
+        })
+        .await;
+
+    // check if the reported missing products are the same as the inserted ones
+    assert_eq!(
+        missing_products_offset
+            .iter()
+            .map(|m| m.1.clone())
+            .collect::<Vec<MissingProduct>>(),
+        products_to_report[2..4].to_vec()
+    );
+
+    // query the reported missing product 'foobar' ... it should occur 3 times
+    let foobar_products = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            order: SortingOrder::Descending,
+        })
+        .await;
+
+    assert_eq!(
+        foobar_products.len(),
+        3,
+        "foobar_products: {:?}",
+        foobar_products
+    );
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
+
+    // delete the first reported missing product
+    client.delete_reported_missing_product(ids[3]).await;
+
+    // query the reported missing product 'foobar' ... it should occur 2 times
+    let foobar_products = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            order: SortingOrder::Descending,
+        })
+        .await;
+
+    assert_eq!(foobar_products.len(), 2);
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
+
+    // delete the first reported missing product again ... nothing should happen
+    client.delete_reported_missing_product(ids[3]).await;
+
+    // query the reported missing product 'foobar' ... it should occur 2 times
+    let foobar_products = client
+        .query_missing_products(&MissingProductQuery {
+            limit: 40,
+            offset: 0,
+            product_id: Some("foobar".to_string()),
+            order: SortingOrder::Descending,
+        })
+        .await;
+
+    assert_eq!(foobar_products.len(), 2);
+    assert!(foobar_products.iter().all(|p| p.1.product_id == "foobar"));
 }
 
 /// Runs the product requests tests against the service.
@@ -656,6 +915,10 @@ async fn service_tests<B: DataBackend + 'static>(options: Options) {
 
     // spawn a task that will stop the service after 1 second
     tokio::spawn(async move {
+        info!("Running backend tests...");
+        missing_product_tests(&endpoint_options).await;
+        info!("Running backend tests...SUCCESS");
+
         info!("Running product requests tests...");
         product_requests_tests(&endpoint_options).await;
         info!("Running product requests tests...SUCCESS");
