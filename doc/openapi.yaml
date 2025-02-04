@@ -10,6 +10,72 @@ servers:
   - url: /v1
     description: The API endpoint for the product database
 paths:
+  /admin/product:
+    post:
+      summary: Adds a new product
+      description: Adds a new product to the database
+      operationId: new_product
+      security: 
+        -  AppleOAuth: ["admin_scope"]
+      requestBody: 
+        description: The details of the new product
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDescription'
+      responses:
+        '201':
+          description: The product has been successfully added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+        '409':
+          description: The product already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+  /admin/product/{id}:
+    delete:
+          summary: Deletes a product
+          description: Deletes the product with the given product id
+          operationId: delete_product
+          security: 
+            -  AppleOAuth: ["admin_scope"]
+          parameters:
+            - name: id
+              in: path
+              description: The id of the product
+              required: true
+              schema:
+                type: string
+          responses:
+            '200':
+              description: The product has been successfully deleted
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/OnlyMessageResponse'
+            '400':
+              description: The input data is invalid
+              content: 
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/OnlyMessageResponse'
+            '404':
+              description: The product does not exist
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/OnlyMessageResponse'
   /admin/product_request/{id}:
     get:
       summary: Gets a product request
@@ -25,6 +91,18 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: with_preview
+          in: query
+          description: Whether to include the preview image in the response
+          required: false
+          schema:
+            type: boolean
+        - name: with_full_image
+          in: query
+          description: Whether to include the full image in the response
+          required: false
+          schema:
+            type: boolean
       responses:
         '200':
           description: The product request
@@ -172,7 +250,7 @@ paths:
           content: 
             application/json:
               schema:
-                $ref: '#/components/schemas/MissingProductsQueryResponse'
+                $ref: '#/components/schemas/OnlyMessageResponse'
   /admin/product_request/query:
     post:
       summary: Queries product requests
@@ -201,7 +279,7 @@ paths:
           content: 
             application/json:
               schema:
-                $ref: '#/components/schemas/ProductRequestQueryResponse'
+                $ref: '#/components/schemas/OnlyMessageResponse'
   /user/missing_products:
     post:
       summary: Reports a missing product
@@ -229,7 +307,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MissingProductReportResponse'
-
   /user/product_request:
     post:
       summary: Posts a product request
@@ -257,6 +334,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductRequestResponse'
+  /user/product/{id}:
+    get:
+      summary: Gets a product
+      description: Gets the details of a product
+      operationId: get_product
+      security: 
+        -  AppleOAuth: ["admin_scope", "user_scope"]
+      parameters:
+        - name: id
+          in: path
+          description: The id of the product
+          required: true
+          schema:
+            type: string
+        - name: with_preview
+          in: query
+          description: Whether to include the preview image in the response
+          required: false
+          schema:
+            type: boolean
+        - name: with_full_image
+          in: query
+          description: Whether to include the full image in the response
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: The product details are returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetProductResponseSuccess'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+        '404':
+          description: The product does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+  /user/product/query:
+      post:
+        summary: Queries products
+        description: Queries the products based on the given query parameter
+        operationId: query_products
+        security: 
+          -  AppleOAuth: ["admin_scope", "user_scope"]
+        requestBody: 
+          description: The product query
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductQuery'
+        responses:
+          '200':
+            description: The products are returned
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProductQueryResponse'
+          '400':
+            description: The input data is invalid
+            content: 
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/OnlyMessageResponse'
 components:
   securitySchemes:
     AppleOAuth:
@@ -537,8 +688,8 @@ components:
     ProductRequestQueryResponse:
       type: object
       required: 
-        -  message
-        -  product_requests
+        - message
+        - product_requests
       properties:
         message:
           type: string
@@ -552,6 +703,18 @@ components:
               - $ref: "#/components/schemas/ProductRequest"
             minItems: 2
             maxItems: 2
+    ProductQueryResponse:
+      type: object
+      required: 
+        - message
+        - products
+      properties:
+        message:
+          type: string
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductDescription"
     MissingProductsQueryResponse:
       type: object
       required: 
@@ -581,3 +744,14 @@ components:
             type: string
           missing_product:
             $ref: "#/components/schemas/MissingProduct"
+    GetProductResponseSuccess:
+        type: object
+        description: The successful response to a get product operation.
+        required: 
+          -  message
+          -  product
+        properties: 
+          message:
+            type: string
+          product:
+            $ref: "#/components/schemas/ProductDescription"
