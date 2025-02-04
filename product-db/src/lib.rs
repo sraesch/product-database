@@ -67,6 +67,18 @@ pub struct ProductInfo {
     pub volume_weight_ratio: Option<f32>,
 }
 
+impl Display for ProductInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Name={}, ID={}, Producer={}",
+            self.name,
+            self.id,
+            self.producer.as_deref().unwrap_or("NA")
+        )
+    }
+}
+
 /// A image of the product. Can be a preview or full image of the product.
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::FromRow)]

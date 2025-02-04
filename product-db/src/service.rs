@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 
-use crate::{service_json::*, MissingProduct, MissingProductQuery, ProductQuery};
+use crate::{service_json::*, MissingProduct, MissingProductQuery, ProductID, ProductQuery};
 
 use crate::{
     DBId, DataBackend, EndpointOptions, Error, Options, ProductDescription, ProductRequest, Result,
@@ -158,6 +158,8 @@ impl<DB: DataBackend + 'static> Service<DB> {
             "/missing_products/{id}",
             delete(Self::handle_delete_missing_product),
         )
+        .route("/product", post(Self::handle_new_product))
+        .route("/product/{id}", delete(Self::handle_delete_product))
     }
 
     /// Sets up the user endpoint.
@@ -474,6 +476,74 @@ impl<DB: DataBackend + 'static> Service<DB> {
             }
             Err(err) => {
                 error!("Failed to receive product request: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(OnlyMessageResponse {
+                        message: err.to_string(),
+                    }),
+                )
+            }
+        }
+    }
+
+    /// POST: Handles adding a new product.
+    async fn handle_new_product(
+        State(state): State<Arc<DB>>,
+        Json(payload): Json<ProductDescription>,
+    ) -> (StatusCode, Json<OnlyMessageResponse>) {
+        debug!("Created new product: {:?}", payload);
+
+        match state.new_product(&payload).await {
+            Ok(ret) => {
+                if ret {
+                    info!("New product created successfully");
+                    (
+                        StatusCode::CREATED,
+                        Json(OnlyMessageResponse {
+                            message: "Product successfully created".to_string(),
+                        }),
+                    )
+                } else {
+                    error!("Product already exists: {}", payload.info);
+                    (
+                        StatusCode::CONFLICT,
+                        Json(OnlyMessageResponse {
+                            message: format!("Product with id={} already exists", payload.info.id),
+                        }),
+                    )
+                }
+            }
+            Err(err) => {
+                error!("Failed to add new product: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(OnlyMessageResponse {
+                        message: err.to_string(),
+                    }),
+                )
+            }
+        }
+    }
+
+    /// POST: Handles deleting a product.
+    async fn handle_delete_product(
+        State(state): State<Arc<DB>>,
+        Path(product_id): Path<ProductID>,
+    ) -> (StatusCode, Json<OnlyMessageResponse>) {
+        debug!("Delete product: {:?}", product_id);
+
+        match state.delete_product(&product_id).await {
+            Ok(_) => {
+                info!("Product deleted successfully");
+                (
+                    StatusCode::OK,
+                    Json(OnlyMessageResponse {
+                        message: "Product deleted successfully".to_string(),
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to delete product: {}", err);
                 (
                     StatusCode::BAD_REQUEST,
                     Json(OnlyMessageResponse {

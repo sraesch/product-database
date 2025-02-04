@@ -1,7 +1,9 @@
+use std::iter::Product;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{DBId, MissingProduct, ProductID, ProductRequest};
+use crate::{DBId, MissingProduct, ProductDescription, ProductID, ProductRequest};
 
 /// The response to a request to add a new product to the database.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -62,4 +64,18 @@ pub struct MissingProductsQueryResponse {
 pub struct GetReportedMissingProductResponse {
     pub message: String,
     pub missing_product: Option<MissingProduct>,
+}
+
+/// The response for getting a product.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GetProductResponse {
+    pub message: String,
+    pub product: Option<ProductDescription>,
+}
+
+/// The response to a query for products.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductQueryResponse {
+    pub message: String,
+    pub products: Vec<ProductDescription>,
 }
