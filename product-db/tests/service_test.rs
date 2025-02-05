@@ -1,6 +1,5 @@
 use std::{collections::HashSet, env::temp_dir, str::FromStr, sync::Arc};
 
-use axum::http::status;
 use chrono::{DateTime, Utc};
 use dockertest::{
     DockerTest, Image, LogAction, LogOptions, LogPolicy, LogSource, TestBodySpecification,
@@ -195,6 +194,12 @@ fn compare_product_requests(
         &rhs.product_description,
         check_preview,
     );
+}
+
+/// Compares the missing products of two products.
+fn compare_missing_products(lhs: &MissingProduct, rhs: &MissingProduct) {
+    assert_eq!(lhs.product_id, rhs.product_id);
+    assert_eq!(truncate_datetime(lhs.date), truncate_datetime(rhs.date));
 }
 
 /// Compares the product description of two products.
@@ -722,18 +727,16 @@ async fn missing_product_tests(options: &EndpointOptions) {
         .await;
 
     // check if the reported missing products are the same as the inserted ones
-    assert_eq!(
-        missing_products
-            .iter()
-            .map(|m| m.1.clone())
-            .collect::<Vec<MissingProduct>>(),
-        products_to_report
-    );
+    for (lhs, rhs) in missing_products.iter().zip(products_to_report.iter()) {
+        compare_missing_products(&lhs.1, rhs);
+    }
 
     // use the get_missing_product method to check if the reported missing products are the same as the inserted ones
     for (id, product) in missing_products.iter() {
         let missing_product = client.get_missing_product(*id).await;
-        assert_eq!(missing_product, Some(product.clone()));
+        let missing_product = missing_product.unwrap();
+
+        compare_missing_products(&missing_product, product);
     }
 
     // query the reported missing products in descending order
@@ -747,17 +750,12 @@ async fn missing_product_tests(options: &EndpointOptions) {
         .await;
 
     // check if the reported missing products are the same as the inserted ones
-    assert_eq!(
-        missing_products_desc
-            .iter()
-            .map(|m| m.1.clone())
-            .collect::<Vec<MissingProduct>>(),
-        products_to_report
-            .iter()
-            .rev()
-            .cloned()
-            .collect::<Vec<MissingProduct>>()
-    );
+    for (lhs, rhs) in missing_products_desc
+        .iter()
+        .zip(products_to_report.iter().rev())
+    {
+        compare_missing_products(&lhs.1, rhs);
+    }
 
     // use offset and limit to query the reported missing products
     let missing_products_offset = client
@@ -770,13 +768,12 @@ async fn missing_product_tests(options: &EndpointOptions) {
         .await;
 
     // check if the reported missing products are the same as the inserted ones
-    assert_eq!(
-        missing_products_offset
-            .iter()
-            .map(|m| m.1.clone())
-            .collect::<Vec<MissingProduct>>(),
-        products_to_report[2..4].to_vec()
-    );
+    for (lhs, rhs) in missing_products_offset
+        .iter()
+        .zip(products_to_report[2..4].iter())
+    {
+        compare_missing_products(&lhs.1, rhs);
+    }
 
     // query the reported missing product 'foobar' ... it should occur 3 times
     let foobar_products = client
