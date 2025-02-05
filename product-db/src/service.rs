@@ -171,6 +171,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
                 "/missing_products",
                 post(Self::handle_report_missing_product),
             )
+            .route("/product/{id}", get(Self::handle_get_product))
     }
 
     /// POST: Handles a requesting a new product.
@@ -548,6 +549,68 @@ impl<DB: DataBackend + 'static> Service<DB> {
                     StatusCode::BAD_REQUEST,
                     Json(OnlyMessageResponse {
                         message: err.to_string(),
+                    }),
+                )
+            }
+        }
+    }
+
+    async fn handle_get_product(
+        State(state): State<Arc<DB>>,
+        Path(product_id): Path<ProductID>,
+        query: Query<GetProductRequestQuery>,
+    ) -> (StatusCode, Json<GetProductResponse>) {
+        debug!("Get product with id={}", product_id);
+
+        match state.get_product(&product_id, query.with_preview).await {
+            Ok(Some(mut product_description)) => {
+                if query.with_full_image {
+                    match state.get_product_image(&product_id).await {
+                        Ok(Some(image)) => {
+                            product_description.full_image = Some(image);
+                        }
+                        Ok(None) => {
+                            warn!("Product with id={} has no full image", product_id);
+                        }
+                        Err(err) => {
+                            error!("Failed to receive product image: {}", err);
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(GetProductResponse {
+                                    message: err.to_string(),
+                                    product: None,
+                                }),
+                            );
+                        }
+                    }
+                }
+
+                info!("Get product with id={} successful", product_id);
+                (
+                    StatusCode::OK,
+                    Json(GetProductResponse {
+                        message: "Product found.".to_string(),
+                        product: Some(product_description),
+                    }),
+                )
+            }
+            Ok(None) => {
+                info!("Product with id={} not found", product_id);
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(GetProductResponse {
+                        message: format!("Product with id={} not found", product_id),
+                        product: None,
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to receive product: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(GetProductResponse {
+                        message: err.to_string(),
+                        product: None,
                     }),
                 )
             }
