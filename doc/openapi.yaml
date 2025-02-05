@@ -155,6 +155,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OnlyMessageResponse'
+  /user/product_request/{id}/image:
+    get:
+      summary: Gets the image for the product request
+      description: Gets the image for the product request with the given product request id
+      operationId: get_product_request_image
+      security: 
+        -  AppleOAuth: ["admin_scope"]
+      parameters:
+        - name: id
+          in: path
+          description: The id of the product request
+          required: true
+          schema:
+            type: number
+            format: int32
+      responses:
+        '200':
+          description: The image is returned
+          content:
+            image/*: # Media type
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+        '404':
+          description: The product does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
   /admin/missing_products/{id}:
     get:
       summary: Gets a reported missing product
@@ -367,6 +402,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GetProductResponseSuccess'
+        '400':
+          description: The input data is invalid
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+        '404':
+          description: The product does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlyMessageResponse'
+  /user/product/{id}/image:
+    get:
+      summary: Gets the image for the product
+      description: Gets the image for the product with the given product id
+      operationId: get_product_image
+      security: 
+        -  AppleOAuth: ["admin_scope", "user_scope"]
+      parameters:
+        - name: id
+          in: path
+          description: The id of the product
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The image is returned
+          content:
+            image/*: # Media type
+              schema:
+                type: string
+                format: binary
         '400':
           description: The input data is invalid
           content: 

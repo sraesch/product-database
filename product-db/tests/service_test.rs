@@ -1,5 +1,6 @@
 use std::{collections::HashSet, env::temp_dir, str::FromStr, sync::Arc};
 
+use axum::http::status;
 use chrono::{DateTime, Utc};
 use dockertest::{
     DockerTest, Image, LogAction, LogOptions, LogPolicy, LogSource, TestBodySpecification,
@@ -8,10 +9,10 @@ use log::{debug, info};
 use product_db::{
     service_json::*, DBId, DataBackend, EndpointOptions, MissingProduct, MissingProductQuery,
     Nutrients, Options, PostgresBackend, PostgresConfig, ProductDescription, ProductID,
-    ProductQuery, ProductRequest, SearchFilter, Secret, Service, Sorting, SortingField,
-    SortingOrder, Weight,
+    ProductImage, ProductQuery, ProductRequest, SearchFilter, Secret, Service, Sorting,
+    SortingField, SortingOrder, Weight,
 };
-use reqwest::{StatusCode, Url};
+use reqwest::{header::CONTENT_TYPE, StatusCode, Url};
 
 /// Truncates the given datetime to seconds.
 /// This is being done for comparison reasons.
@@ -608,6 +609,78 @@ impl ServiceClient {
 
         response.products
     }
+
+    /// Gets the full image of the product with the given id.
+    ///
+    /// # Arguments
+    /// - `product_id` - The id of the product to get the image for.
+    pub async fn get_product_image(&self, product_id: &ProductID) -> Option<ProductImage> {
+        let path = format!("user/product/{}/image", product_id);
+
+        let url = self.server_address.join(&path).unwrap();
+
+        debug!("GET: {}", url);
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Product image response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert!(status_code == StatusCode::NOT_FOUND || status_code == StatusCode::OK);
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        let content_type: String = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .map(|h| h.to_str().unwrap().to_string())
+            .unwrap();
+        let image_data: Vec<u8> = response.bytes().await.unwrap().into();
+
+        Some(ProductImage {
+            content_type,
+            data: image_data,
+        })
+    }
+
+    /// Gets the full image of the product request with the given id.
+    ///
+    /// # Arguments
+    /// - `request_id` - The id of the product to get the image for.
+    pub async fn get_product_request_image(&self, request_id: DBId) -> Option<ProductImage> {
+        let path = format!("admin/product_request/{}/image", request_id);
+
+        let url = self.server_address.join(&path).unwrap();
+
+        debug!("GET: {}", url);
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Product image response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert!(status_code == StatusCode::NOT_FOUND || status_code == StatusCode::OK);
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        let content_type: String = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .map(|h| h.to_str().unwrap().to_string())
+            .unwrap();
+        let image_data: Vec<u8> = response.bytes().await.unwrap().into();
+
+        Some(ProductImage {
+            content_type,
+            data: image_data,
+        })
+    }
 }
 
 /// Runs the missing product tests against the service instance.
@@ -803,6 +876,12 @@ async fn product_requests_tests(options: &EndpointOptions) {
             compare_product_description(out_product, in_product, with_preview);
 
             if with_preview {
+                if let Some(full_image) = &in_product.full_image {
+                    let out_image = client.get_product_request_image(*id).await.unwrap();
+                    assert_eq!(out_image.content_type, full_image.content_type);
+                    assert_eq!(out_image.data, full_image.data);
+                }
+
                 // if the preview flag is set, we also test getting the full image of the product
                 assert_eq!(
                     product_request.product_description.full_image,
@@ -1172,6 +1251,12 @@ async fn product_tests(options: &EndpointOptions) {
 
             if with_preview {
                 assert_eq!(out_product.full_image, in_product.full_image);
+
+                if let Some(full_image) = &in_product.full_image {
+                    let out_image = client.get_product_image(&in_product.info.id).await.unwrap();
+                    assert_eq!(out_image.content_type, full_image.content_type);
+                    assert_eq!(out_image.data, full_image.data);
+                }
             }
         }
     }

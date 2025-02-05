@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
@@ -147,6 +148,10 @@ impl<DB: DataBackend + 'static> Service<DB> {
             post(Self::handle_product_request_query),
         )
         .route(
+            "/product_request/{id}/image",
+            get(Self::handle_get_product_request_image),
+        )
+        .route(
             "/missing_products/query",
             post(Self::handle_missing_products_query),
         )
@@ -173,6 +178,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
             )
             .route("/product/{id}", get(Self::handle_get_product))
             .route("/product/query", post(Self::handle_product_query))
+            .route("/product/{id}/image", get(Self::handle_get_product_image))
     }
 
     /// POST: Handles a requesting a new product.
@@ -556,6 +562,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
         }
     }
 
+    /// GET: Handles getting the specified product.
     async fn handle_get_product(
         State(state): State<Arc<DB>>,
         Path(product_id): Path<ProductID>,
@@ -645,6 +652,85 @@ impl<DB: DataBackend + 'static> Service<DB> {
                         products: Vec::new(),
                     }),
                 )
+            }
+        }
+    }
+
+    /// GET: Handles getting the product image.
+    async fn handle_get_product_image(
+        State(state): State<Arc<DB>>,
+        Path(product_id): Path<ProductID>,
+    ) -> impl IntoResponse {
+        debug!("Get product image with id={}", product_id);
+
+        match state.get_product_image(&product_id).await {
+            Ok(Some(image)) => {
+                info!("Get product image with id={} successful", product_id);
+
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_str(&image.content_type).unwrap(),
+                );
+
+                Ok((headers, image.data))
+            }
+            Ok(None) => {
+                info!("Product with id={} has no image", product_id);
+                let response = Json(OnlyMessageResponse {
+                    message: format!("Product with id={} has no image", product_id),
+                });
+
+                Err((StatusCode::NOT_FOUND, response))
+            }
+            Err(err) => {
+                error!("Failed to receive product image: {}", err);
+                let response = Json(OnlyMessageResponse {
+                    message: err.to_string(),
+                });
+
+                Err((StatusCode::BAD_REQUEST, response))
+            }
+        }
+    }
+
+    /// GET: Handles getting the product request image.
+    async fn handle_get_product_request_image(
+        State(state): State<Arc<DB>>,
+        Path(request_id): Path<DBId>,
+    ) -> impl IntoResponse {
+        debug!("Get product request image with id={}", request_id);
+
+        match state.get_product_request_image(request_id).await {
+            Ok(Some(image)) => {
+                info!(
+                    "Get product request image with id={} successful",
+                    request_id
+                );
+
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_str(&image.content_type).unwrap(),
+                );
+
+                Ok((headers, image.data))
+            }
+            Ok(None) => {
+                info!("Product request with id={} has no image", request_id);
+                let response = Json(OnlyMessageResponse {
+                    message: format!("Product request with id={} has no image", request_id),
+                });
+
+                Err((StatusCode::NOT_FOUND, response))
+            }
+            Err(err) => {
+                error!("Failed to receive product image: {}", err);
+                let response = Json(OnlyMessageResponse {
+                    message: err.to_string(),
+                });
+
+                Err((StatusCode::BAD_REQUEST, response))
             }
         }
     }
