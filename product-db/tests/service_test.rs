@@ -478,6 +478,136 @@ impl ServiceClient {
 
         debug!("Delete missing product response: {:?}", response);
     }
+
+    /// Adds a new product to the database.
+    /// Returns true if the product was added successfully and false if it already exists.
+    ///
+    /// # Arguments
+    /// - `product` - The product to add.
+    pub async fn new_product(&self, product: &ProductDescription) -> bool {
+        let url = self.server_address.join("admin/product").unwrap();
+        debug!("POST: {}", url);
+
+        let response = self.client.post(url).json(product).send().await.unwrap();
+
+        let status_code = response.status();
+        assert!(
+            status_code == StatusCode::CREATED || status_code == StatusCode::CONFLICT,
+            "Status code is not CREATED or CONFLICT, It is {}",
+            status_code
+        );
+        if status_code == StatusCode::CONFLICT {
+            return false;
+        }
+
+        let response: OnlyMessageResponse = response.json().await.unwrap();
+        debug!("New product response: {:?}", response);
+
+        true
+    }
+
+    /// Gets the product with the given product id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the product to get.
+    /// - `with_preview` - Whether to include the preview image in the response.
+    /// - `with_full_image` - Whether to include the full image in the response.
+    pub async fn get_product(
+        &self,
+        id: &ProductID,
+        with_preview: bool,
+        with_full_image: bool,
+    ) -> Option<ProductDescription> {
+        let mut url = self
+            .server_address
+            .join("user/product/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        if with_preview {
+            url.query_pairs_mut().append_pair("with_preview", "true");
+        }
+
+        if with_full_image {
+            url.query_pairs_mut().append_pair("with_full_image", "true");
+        }
+
+        debug!("GET: {}", url);
+
+        let response = self.client.get(url).send().await.unwrap();
+        debug!(
+            "Product response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert!(status_code == StatusCode::NOT_FOUND || status_code == StatusCode::OK);
+        let response: GetProductResponse = response.json().await.unwrap();
+
+        debug!("Product response: {:?}", response);
+
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        if status_code == StatusCode::NOT_FOUND {
+            return None;
+        }
+
+        assert_eq!(status_code, StatusCode::OK);
+
+        response.product
+    }
+
+    /// Deletes the product with the given id.
+    ///
+    /// # Arguments
+    /// - `id` - The id of the product request to delete.
+    pub async fn delete_product(&self, id: &ProductID) {
+        let url = self
+            .server_address
+            .join("admin/product/")
+            .unwrap()
+            .join(&id.to_string())
+            .unwrap();
+
+        debug!("DELETE: {}", url);
+
+        let response = self.client.delete(url).send().await.unwrap();
+        debug!(
+            "Delete product response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert_eq!(status_code, StatusCode::OK);
+        let response: OnlyMessageResponse = response.json().await.unwrap();
+
+        debug!("Delete product response: {:?}", response);
+    }
+
+    /// Queries the products.
+    ///
+    /// # Arguments
+    /// - `query` - The query to use.
+    pub async fn query_products(&self, query: &ProductQuery) -> Vec<ProductDescription> {
+        let url = self.server_address.join("user/product/query").unwrap();
+
+        debug!("POST: {}", url);
+        let response = self.client.post(url).json(query).send().await.unwrap();
+        debug!(
+            "Product query response: status={}, length={}",
+            response.status(),
+            response.content_length().unwrap_or_default()
+        );
+        let status_code = response.status();
+        assert_eq!(status_code, StatusCode::OK);
+
+        let response: ProductQueryResponse = response.json().await.unwrap();
+
+        response.products
+    }
 }
 
 /// Runs the missing product tests against the service instance.
@@ -898,6 +1028,204 @@ async fn query_product_requests_tests(
     info!("Querying product requests tests...SUCCESS");
 }
 
+/// Executes the tests for querying products.
+///
+/// # Arguments
+/// - `client` - The service client.
+/// - `products` - The products to user for the query-tests.
+async fn query_products_tests(client: &ServiceClient, products: &[ProductDescription]) {
+    info!("Querying products tests...");
+
+    // query all products and check if they are the same as the inserted ones
+    let out_products: Vec<ProductDescription> = client
+        .query_products(&ProductQuery {
+            limit: 40,
+            offset: 0,
+            filter: SearchFilter::NoFilter,
+            sorting: None,
+        })
+        .await;
+
+    assert_eq!(out_products.len(), products.len());
+    for (in_product, out_product) in products.iter().zip(out_products.iter()) {
+        compare_product_description(out_product, in_product, true);
+    }
+
+    // test everything with a search query
+    let offsets = [0, 1, 2, 3, 4];
+    let limits = [1, 2, 3, 4, 5];
+    let sortings = [
+        None,
+        Some(Sorting {
+            order: SortingOrder::Ascending,
+            field: SortingField::Name,
+        }),
+        Some(Sorting {
+            order: SortingOrder::Ascending,
+            field: SortingField::ProductID,
+        }),
+        Some(Sorting {
+            order: SortingOrder::Descending,
+            field: SortingField::Name,
+        }),
+        Some(Sorting {
+            order: SortingOrder::Descending,
+            field: SortingField::ProductID,
+        }),
+    ];
+
+    for (offset, (limit, sorting)) in offsets.iter().zip(limits.iter().zip(sortings.iter())) {
+        let out_products: Vec<ProductDescription> = client
+            .query_products(&ProductQuery {
+                limit: *limit,
+                offset: *offset,
+                filter: SearchFilter::NoFilter,
+                sorting: *sorting,
+            })
+            .await;
+
+        // sort the input products according to the sorting
+        let mut sorted_products = products.to_vec();
+        if let Some(sorting) = sorting {
+            match sorting.field {
+                SortingField::Name => {
+                    sorted_products.sort_by_key(|p| p.info.name.clone());
+                }
+                SortingField::ProductID => {
+                    sorted_products.sort_by_key(|p| p.info.id.clone());
+                }
+                _ => panic!("Unsupported sorting field"),
+            }
+
+            if sorting.order == SortingOrder::Descending {
+                sorted_products.reverse();
+            }
+        }
+
+        let sorted_products = sorted_products
+            .iter()
+            .skip(*offset as usize)
+            .take(*limit as usize)
+            .cloned()
+            .collect::<Vec<ProductDescription>>();
+
+        assert_eq!(out_products.len(), sorted_products.len());
+        for (in_product, out_product) in sorted_products.iter().zip(out_products.iter()) {
+            compare_product_description(out_product, in_product, true);
+        }
+    }
+
+    // using a search-string query, find all alpro products
+    let ret = client
+        .query_products(&ProductQuery {
+            offset: 0,
+            limit: 5,
+            filter: SearchFilter::Search("Alpro".to_string()),
+            sorting: Some(Sorting {
+                order: SortingOrder::Descending,
+                field: SortingField::Similarity,
+            }),
+        })
+        .await;
+
+    assert_eq!(ret.len(), 2);
+
+    // get the two reference products
+    let alpro1 = find_product_by_id(products, "5411188080213".to_string()).unwrap();
+    let alpro2 = find_product_by_id(products, "5411188124689".to_string()).unwrap();
+    compare_product_description(&ret[0], alpro1, true);
+    compare_product_description(&ret[1], alpro2, true);
+
+    info!("Querying products tests...SUCCESS");
+}
+
+/// Runs the product tests with the given backend.
+///
+/// # Arguments
+/// - `options` - The endpoint options.
+async fn product_tests(options: &EndpointOptions) {
+    let client = ServiceClient::new(options.address.clone());
+
+    // load the products from the test_data/products.json file
+    let products = load_products();
+
+    // add the products in the list
+    for product_desc in products.iter() {
+        info!("Added product with id: {}", product_desc.info.id);
+        assert!(client.new_product(product_desc).await);
+        info!(
+            "New product {} added from producer={}",
+            product_desc.info.name,
+            product_desc.info.producer.as_deref().unwrap_or("None")
+        );
+    }
+
+    // check if the added products are the same as the inserted ones by using the get_missing_product method
+    for with_preview in [true, false] {
+        for in_product in products.iter() {
+            let out_product = client
+                .get_product(&in_product.info.id, with_preview, with_preview)
+                .await
+                .unwrap();
+
+            compare_product_description(&out_product, in_product, with_preview);
+
+            if with_preview {
+                assert_eq!(out_product.full_image, in_product.full_image);
+            }
+        }
+    }
+
+    // // execute the querying products tests
+    query_products_tests(&client, products.as_slice()).await;
+
+    // add the products in the list again ... we should get false for all of them
+    for product_desc in products.iter() {
+        assert!(!client.new_product(product_desc).await);
+    }
+
+    // delete the first 2 products
+    client.delete_product(&products[0].info.id).await;
+    client.delete_product(&products[1].info.id).await;
+
+    assert_eq!(
+        client.get_product(&products[0].info.id, true, false).await,
+        None
+    );
+    assert_eq!(
+        client.get_product(&products[1].info.id, true, false).await,
+        None
+    );
+    assert_eq!(
+        client.get_product(&products[0].info.id, false, false).await,
+        None
+    );
+    assert_eq!(
+        client.get_product(&products[1].info.id, false, false).await,
+        None
+    );
+
+    // // delete the first 2 products again ... nothing should happen
+    client.delete_product(&products[0].info.id).await;
+    client.delete_product(&products[1].info.id).await;
+
+    // check that the last added product is still there
+    for with_preview in [true, false] {
+        let in_product = &products[2];
+
+        let out_product = client
+            .get_product(&in_product.info.id, with_preview, with_preview)
+            .await
+            .unwrap();
+
+        compare_product_description(&out_product, in_product, with_preview);
+
+        if with_preview {
+            assert_eq!(out_product.full_image, in_product.full_image);
+        }
+    }
+}
+
 /// Runs the service tests with the given backend.
 ///
 /// # Arguments
@@ -922,6 +1250,10 @@ async fn service_tests<B: DataBackend + 'static>(options: Options) {
         info!("Running product requests tests...");
         product_requests_tests(&endpoint_options).await;
         info!("Running product requests tests...SUCCESS");
+
+        info!("Running product tests...");
+        product_tests(&endpoint_options).await;
+        info!("Running product tests...SUCCESS");
 
         service_clone.stop();
     });
