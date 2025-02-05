@@ -172,6 +172,7 @@ impl<DB: DataBackend + 'static> Service<DB> {
                 post(Self::handle_report_missing_product),
             )
             .route("/product/{id}", get(Self::handle_get_product))
+            .route("/product/query", post(Self::handle_product_query))
     }
 
     /// POST: Handles a requesting a new product.
@@ -611,6 +612,37 @@ impl<DB: DataBackend + 'static> Service<DB> {
                     Json(GetProductResponse {
                         message: err.to_string(),
                         product: None,
+                    }),
+                )
+            }
+        }
+    }
+
+    /// POST: Handles executing a product query.
+    async fn handle_product_query(
+        State(state): State<Arc<DB>>,
+        Json(query): Json<ProductQuery>,
+    ) -> (StatusCode, Json<ProductQueryResponse>) {
+        debug!("Get product query [Decoded]: {:?}", query);
+
+        match state.query_products(&query, true).await {
+            Ok(result) => {
+                info!("Product query successful: {:?}", query);
+                (
+                    StatusCode::OK,
+                    Json(ProductQueryResponse {
+                        message: "Query executed successful".to_string(),
+                        products: result,
+                    }),
+                )
+            }
+            Err(err) => {
+                error!("Failed to process product query: {}", err);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ProductQueryResponse {
+                        message: err.to_string(),
+                        products: Vec::new(),
                     }),
                 )
             }

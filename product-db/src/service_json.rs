@@ -1,5 +1,3 @@
-use std::iter::Product;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
