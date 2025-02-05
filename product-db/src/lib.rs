@@ -3,6 +3,8 @@ mod error;
 mod options;
 mod postgres;
 mod secret;
+mod service;
+pub mod service_json;
 mod sql_types;
 
 use std::fmt::Display;
@@ -16,6 +18,7 @@ pub use error::*;
 pub use options::*;
 pub use postgres::*;
 pub use secret::*;
+pub use service::*;
 
 /// The id of a single product
 pub type ProductID = String;
@@ -62,6 +65,18 @@ pub struct ProductInfo {
     /// The ratio between volume and weight, i.e. volume(ml) = weight(g) * volume_weight_ratio
     /// Is only defined if the quantity type is volume
     pub volume_weight_ratio: Option<f32>,
+}
+
+impl Display for ProductInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Name={}, ID={}, Producer={}",
+            self.name,
+            self.id,
+            self.producer.as_deref().unwrap_or("NA")
+        )
+    }
 }
 
 /// A image of the product. Can be a preview or full image of the product.

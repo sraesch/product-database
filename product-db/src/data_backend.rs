@@ -5,7 +5,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{MissingProduct, ProductDescription, ProductID, ProductImage, ProductRequest, Result};
+use crate::{
+    MissingProduct, Options, ProductDescription, ProductID, ProductImage, ProductRequest, Result,
+};
 
 pub type DBId = i32;
 
@@ -32,6 +34,7 @@ impl Display for SortingOrder {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct MissingProductQuery {
     /// The offset of the query results.
+    #[serde(default)]
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,
@@ -83,8 +86,9 @@ pub struct Sorting {
 }
 
 /// The search filter for the query results.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum SearchFilter {
+    #[default]
     #[serde(rename = "no_filter")]
     NoFilter,
 
@@ -112,16 +116,25 @@ impl SearchFilter {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ProductQuery {
     /// The offset of the query results.
+    #[serde(default)]
     pub offset: i32,
     /// The limit of the query results.
     pub limit: i32,
     /// The filter to apply to the query results.
+    #[serde(default)]
     pub filter: SearchFilter,
     /// The sorting parameters for the query results (optional).
+    #[serde(default)]
     pub sorting: Option<Sorting>,
 }
 
-pub trait DataBackend: Send + Sync {
+pub trait DataBackend: Send + Sync + Sized {
+    /// Creates a new instance of the data backend.
+    ///
+    /// # Arguments
+    /// - `options` - The options for the data backend.
+    fn new(options: &Options) -> impl Future<Output = Result<Self>> + Send;
+
     /// Reports a missing product and returns an internal id in the database.
     ///
     /// # Arguments
