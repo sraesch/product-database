@@ -73,7 +73,7 @@ mod test {
         let data = include_bytes!("../../example/config.toml");
         let c = ProgramConfig::from_reader(data.as_slice()).unwrap();
 
-        assert_eq!(c.log, LogLevel::Info);
+        assert_eq!(c.log, LogLevel::Debug);
 
         assert_eq!(c.postgres.dbname, "product_db");
         assert_eq!(c.postgres.host, "localhost");
