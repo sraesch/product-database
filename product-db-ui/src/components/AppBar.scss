@@ -1,0 +1,52 @@
+@import './styles/theme.scss';
+
+.app-bar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background-color: $primary;
+    color: $onPrimary;
+  }
+
+  .app-bar-logo {
+    width: 4rem;
+    height: 4rem;
+  }
+  
+  .app-bar-title {
+    padding: 0;
+    margin: 0;
+  }
+  
+  .app-bar-menu-button {
+    background-color: transparent;
+    border: rgba($onPrimary, .5) 1px solid;
+    border-radius: 0.5rem;
+    color: $onPrimary;
+    font-size: 1.5rem;
+    cursor: pointer;
+    margin: 0 0.2rem;
+  
+    transition-property: border, background-color;
+    transition-duration: 0.2s;
+  }
+  
+  .app-bar-menu-button:hover {
+    border: $onPrimary 1px solid;
+    background-color: rgba($onPrimary, 0.1);
+  }
+  
+  .app-bar-menu-button:active {
+    border: $onPrimary 1px solid;
+    background-color: rgba($onPrimary, 0.2);
+  }
+
+
+  .app-bar-menu-button-enabled {
+    @extend .app-bar-menu-button;
+    border: $onPrimary 1px solid;
+    background-color: rgba($onPrimary, 0.2);
+  }
