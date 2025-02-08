@@ -1,2 +1,2 @@
 // Use the colors_white.scss file to import the colors for the white theme
-@import 'colors_white.scss';
+@use 'colors_white.scss' as *;
