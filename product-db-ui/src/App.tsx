@@ -1,15 +1,21 @@
+import { Tabs } from '@mui/material';
 import './App.css'
 
 import MenuBar from './components/MenuBar';
 
 function App() {
   return (
-    <>
-      <main>
+    <div className='App'>
+      <header>
         <MenuBar />
+      </header>
+      <main>
+        <Tabs>
+          
+        </Tabs>
       </main>
-    </>
+    </div>
   )
 }
 
-export default App
+export default App;
