@@ -4,18 +4,49 @@ import Tab from '@mui/material/Tab';
 import './App.css'
 
 import MenuBar from './components/MenuBar';
-import { useState } from 'react';
-import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Link, Location, matchPath, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router';
 import Products from './components/Products';
 import ProductRequests from './components/ProductRequests';
+import { JSX } from 'react';
+
+const routes = ['/products', '/requests'];
+
+
+function useRouteMatch(location: Location): number {
+  const { pathname } = location;
+
+  for (let i = 0; i < routes.length; i += 1) {
+    const pattern = routes[i];
+    const possibleMatch = matchPath(pattern, pathname);
+    if (possibleMatch !== null) {
+      return i;
+    }
+  }
+
+  return 0;
+}
+
+function TabsNavigation(): JSX.Element {
+  const theme = useTheme();
+  const location: Location = useLocation();
+  const currentTab = useRouteMatch(location);
+
+  return (
+    <Tabs value={currentTab} sx={{
+      backgroundColor: theme.palette.primary.main,
+      ".Mui-selected": {
+        color: 'white',
+      },
+    }} variant="fullWidth">
+      <Tab label="Products" component={Link} to="/products" />
+      <Tab label="Product Requests" component={Link} to="/requests"  >
+      </Tab>
+    </Tabs>
+  );
+}
+
 
 function App() {
-  const theme = useTheme();
-  const [value, setValue] = useState<string>('products');
-
-  const handleChange = (_: React.SyntheticEvent, newValue: string) => {
-    setValue(newValue);
-  };
 
   return (
     <Router>
@@ -24,13 +55,7 @@ function App() {
           <MenuBar />
         </header>
         <main>
-          <Tabs style={{
-            backgroundColor: theme.palette.primary.main,
-            color: theme.palette.text.disabled
-          }} variant="fullWidth" value={value} onChange={handleChange}>
-            <Tab label="Products" value="products" />
-            <Tab label="Product Requests" value="requests" />
-          </Tabs>
+          <TabsNavigation />
           <Routes>
             <Route path="/" element={<Products />} />
             <Route path="/products" element={<Products />} />
