@@ -1,0 +1,20 @@
+FROM ubuntu:24.04
+
+# Update and upgrade the system
+RUN apt update && apt upgrade -y
+
+# Create service user 'product-service'
+RUN useradd -ms /bin/bash product-service
+
+# Add service executable to /usr/local/bin
+ADD ./target/release/product-db-cli /usr/local/bin/product-db-cli
+
+# Add default configuration file to /etc/product-service
+# It can be overridden by mounting a volume with a custom configuration file
+ADD ./example/config.toml /etc/product-service/config.toml
+
+# Run the service as the 'product-service' user
+USER product-service
+
+# Set the entrypoint with the path to the configuration file as single argument
+ENTRYPOINT ["/usr/local/bin/product-db-cli", "--config", "/etc/product-service/config.toml"]

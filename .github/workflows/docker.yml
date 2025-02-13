@@ -1,8 +1,10 @@
 name: "Build Docker Images"
 
 on:
-  push:
-  pull_request:
+  workflow_run:
+    workflows: ["Rust Actions"]
+    types:
+      - completed
 
 jobs:
   docker-db:
@@ -17,3 +19,17 @@ jobs:
           push: false
           file: ./docker/Dockerfile.db
           tags: product-database-sql:1.0.0
+
+  docker-service:
+    name: "Build Service Docker Image"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          file: ./docker/Dockerfile.service
+          tags: product-service:1.0.0
