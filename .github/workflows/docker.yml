@@ -2,7 +2,7 @@ name: "Build Docker Images"
 
 on:
   workflow_run:
-    workflows: ["Rust Actions"]
+    workflows: [rust-actions]
     types:
       - completed
 

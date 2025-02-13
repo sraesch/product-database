@@ -1,4 +1,4 @@
-name: "Rust Actions"
+name: rust-actions
 
 on:
   push:

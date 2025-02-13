@@ -1050,7 +1050,7 @@ async fn test_postgres_backend() {
     }));
 
     // create a temporary file to store the database schema
-    let schema = include_str!("../../database/init.sql");
+    let schema = include_str!("../../docker/db/init.sql");
     let mut init_file = temp_dir();
     init_file.push("init.sql");
     std::fs::write(&init_file, schema).unwrap(); // write the schema to a file
