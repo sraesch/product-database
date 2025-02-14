@@ -77,21 +77,3 @@ jobs:
       - uses: "actions-rs/cargo@v1"
         with:
           command: "clippy"
-
-  build:
-    name: "Cargo build"
-    runs-on: "ubuntu-latest"
-    steps:
-      - name: "Check out the repo"
-        uses: actions/checkout@v4
-
-      - uses: "actions-rs/toolchain@v1"
-        with:
-          profile: "minimal"
-          toolchain: "stable"
-          override: true
-
-      - uses: "actions-rs/cargo@v1"
-        with:
-          command: "build"
-          args: "--release"
