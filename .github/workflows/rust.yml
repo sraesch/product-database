@@ -1,10 +1,8 @@
-name: "Rust Actions"
+name: rust-actions
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 jobs:
   check:
@@ -12,7 +10,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: "actions-rs/toolchain@v1"
         with:
@@ -29,7 +27,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: "actions-rs/toolchain@v1"
         with:
@@ -47,7 +45,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: "actions-rs/toolchain@v1"
         with:
@@ -66,7 +64,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: "actions-rs/toolchain@v1"
         with:
