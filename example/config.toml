@@ -1,0 +1,17 @@
+# The logging level
+log = "Debug"
+
+[endpoint]
+# The address to bind the controller REST API
+address = "0.0.0.0:3030"
+# CORS allowed origins
+allow_origin = "*"
+
+# Connection details for Postgres
+[postgres]
+host = "localhost"
+port = 5432
+dbname = "product_db"
+user = "postgres"
+password = "postgres"
+max_connections = 5

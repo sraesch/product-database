@@ -4,3 +4,29 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+log = "0.4"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+serde_with_macros = "3.12"
+serde_with = { version = "3.12", features = ["base64"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.0", features = ["sync"] }
+futures = "0.3"
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "tls-native-tls",
+    "postgres",
+    "chrono",
+] }
+load_image = "3.2"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+
+[dev-dependencies]
+dockertest = "0.5"
+rand = "0.9"
+env_logger = "0.11"
+tempfile = "3.2"
+reqwest = { version = "0.12", features = ["json"] }

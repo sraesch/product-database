@@ -1,0 +1,16 @@
+{
+    "editor.formatOnSave": true,
+    "cSpell.words": [
+        "amqprs",
+        "dbname",
+        "deadpool",
+        "dockertest",
+        "GTIN",
+        "initdb",
+        "reqwest",
+        "serde",
+        "sqlx",
+        "thiserror",
+        "urlencoding"
+    ]
+}
