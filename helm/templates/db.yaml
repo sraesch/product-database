@@ -1,0 +1,54 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: product-db-sql-storage-pvc
+  labels:
+    app: product-db-sql-service
+spec:
+  storageClassName: {{ .Values.db.storageClass }}
+  accessModes:
+    - {{ .Values.db.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.db.storage }}
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: product-db-sql-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-db-sql-service
+  template:
+    metadata:
+      labels:
+        app: product-db-sql-service
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: product-db-sql-service
+          image: "{{ .Values.image.repository }}/product-database-sql:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+            - name: product-db-sql-storage
+              mountPath: /var/lib/postgresql/data
+          env:
+            - name: POSTGRES_DB
+              value: product_db
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+      volumes:
+        - name: product-db-sql-storage
+          persistentVolumeClaim:
+            claimName: product-db-sql-storage-pvc
