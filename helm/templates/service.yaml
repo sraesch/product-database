@@ -66,6 +66,12 @@ spec:
           - name: config
             mountPath: "/etc/product-service"
             readOnly: true
+          env:
+            - name: PRODUCT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: product-db-credentials
+                  key: db-password
       volumes:
         - name: config
           configMap:
