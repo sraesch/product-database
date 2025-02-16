@@ -5,7 +5,7 @@ info:
     name: MIT
     url: https://opensource.org/licenses/MIT
   description: API to manage a product database
-  version: 0.1.0
+  version: 0.1.1
 servers:
   - url: /v1
     description: The API endpoint for the product database
