@@ -25,6 +25,7 @@ pub struct ProgramConfig {
 }
 
 impl ProgramConfig {
+    /// Print the configuration to the log.
     pub fn print_to_log(&self) {
         info!("Configuration:");
         info!("Log level: {}", self.log);
@@ -39,6 +40,10 @@ impl ProgramConfig {
         info!("Allow Origin: {}", self.endpoint.allow_origin);
     }
 
+    /// Load the configuration from a reader.
+    ///
+    /// # Arguments
+    /// - `r` - The reader to read the configuration from.
     pub fn from_reader<R: Read>(r: R) -> Result<Self> {
         let mut s = String::new();
 
@@ -49,6 +54,15 @@ impl ProgramConfig {
 
         Ok(config)
     }
+
+    /// Load secrets from environment variables if defined
+    pub fn load_secrets_from_env(&mut self) {
+        if let Ok(password) = std::env::var("PRODUCT_DB_PASSWORD") {
+            let password = product_db::Secret::new(password);
+            info!("Loaded secret PRODUCT_DB_PASSWORD from env: {}", password);
+            self.postgres.password = password;
+        }
+    }
 }
 
 impl TryFrom<ProgramOptions> for ProgramConfig {
@@ -58,7 +72,10 @@ impl TryFrom<ProgramOptions> for ProgramConfig {
         let config_path = value.config_path.as_path();
         let r = std::fs::File::open(config_path)
             .with_context(|| format!("Failed to open file {}", config_path.display()))?;
-        ProgramConfig::from_reader(r)
+        let mut c = ProgramConfig::from_reader(r)?;
+        c.load_secrets_from_env();
+
+        Ok(c)
     }
 }
 
