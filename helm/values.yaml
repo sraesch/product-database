@@ -21,6 +21,16 @@ db:
   # Therefore, ReadWriteOnce is sufficient.
   accessMode: ReadWriteOnce
 
+  # The user for the database
+  username: product_db_user
+
+  # The name of the database
+  dbname: product_db
+
+# The credentials for the database
+credentials:
+  # Depending on your environment, you might want to use a secret store like HashiCorp Vault or AWS Secrets Manager
+  db_password: postgres
 
 # # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 # service:
