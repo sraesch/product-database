@@ -70,3 +70,26 @@ spec:
         - name: product-db-sql-storage
           persistentVolumeClaim:
             claimName: product-db-sql-storage-pvc
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: product-db-sql-service
+  labels:
+    app.kubernetes.io/name: sql-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: product-db
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: sql-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: product-db
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
