@@ -27,6 +27,13 @@ db:
   # The name of the database
   dbname: product_db
 
+# The REST service for the product data
+service:
+  port: 8080
+
+  # The log level of the REST service. Can be one of: Trace, Debug, Info, Warn, Error
+  logLevel: Info
+
 # The credentials for the database
 credentials:
   # Depending on your environment, you might want to use a secret store like HashiCorp Vault or AWS Secrets Manager
