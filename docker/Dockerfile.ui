@@ -1,0 +1,4 @@
+FROM nginx:1.27
+
+# Copy the build output to replace the default nginx contents.
+COPY ./product-db-ui/dist /usr/share/nginx/html
