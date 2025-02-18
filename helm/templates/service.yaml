@@ -14,7 +14,7 @@ data:
     log = "{{ .Values.service.logLevel }}"
 
     [endpoint]
-    address = "0.0.0.0:{{ .Values.service.port }}"
+    address = "0.0.0.0:80"
     allow_origin = "*"
 
     [postgres]
@@ -60,7 +60,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: 80
               protocol: TCP
           volumeMounts:
           - name: config
@@ -100,5 +100,5 @@ spec:
     app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
     - protocol: TCP
-      port: 8080
-      targetPort: 8080
+      port: 80
+      targetPort: 80

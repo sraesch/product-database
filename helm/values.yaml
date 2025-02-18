@@ -29,8 +29,6 @@ db:
 
 # The REST service for the product data
 service:
-  port: 8080
-
   # The log level of the REST service. Can be one of: Trace, Debug, Info, Warn, Error
   logLevel: Info
 
