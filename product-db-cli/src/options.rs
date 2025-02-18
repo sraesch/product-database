@@ -36,7 +36,13 @@ impl ProgramConfig {
         info!("Postgres Password: {}", self.postgres.password);
         info!("Postgres Database: {}", self.postgres.dbname);
         info!("Endpoint:");
-        info!("Address: {}", self.endpoint.address);
+
+        if let Some(prefix) = &self.endpoint.prefix {
+            info!("Address: {}/{}", self.endpoint.address, prefix);
+        } else {
+            info!("Address: {}", self.endpoint.address);
+        }
+
         info!("Allow Origin: {}", self.endpoint.allow_origin);
     }
 
