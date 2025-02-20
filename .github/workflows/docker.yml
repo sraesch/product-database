@@ -30,7 +30,7 @@ jobs:
           # Push only if the branch is main
           push: ${{ github.ref == 'refs/heads/main' }}
           file: ./docker/Dockerfile.db
-          tags: ghcr.io/sraesch/product-database-sql:0.1.1
+          tags: ghcr.io/sraesch/product-database-sql:0.1.2
 
   product-service-docker-image:
     name: "Build Product Service Docker Image"
@@ -64,7 +64,7 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' }}
           context: .
           file: ./docker/Dockerfile.service
-          tags: ghcr.io/sraesch/product-service:0.1.1
+          tags: ghcr.io/sraesch/product-service:0.1.2
 
   product-ui-docker-image:
     name: "Build Product UI Docker Image"
@@ -99,4 +99,4 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' }}
           context: .
           file: ./docker/Dockerfile.ui
-          tags: ghcr.io/sraesch/product-db-ui:0.1.1
+          tags: ghcr.io/sraesch/product-db-ui:0.1.2
