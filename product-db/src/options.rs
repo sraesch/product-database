@@ -19,6 +19,10 @@ pub struct EndpointOptions {
 
     /// The allowed origin for CORS requests.
     pub allow_origin: String,
+
+    /// The prefix for the endpoint.
+    #[serde(default)]
+    pub prefix: Option<String>,
 }
 
 impl Default for EndpointOptions {
@@ -26,6 +30,7 @@ impl Default for EndpointOptions {
         Self {
             address: "0.0.0.0:8080".to_string(),
             allow_origin: "*".to_string(),
+            prefix: None,
         }
     }
 }

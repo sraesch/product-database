@@ -124,8 +124,15 @@ impl<DB: DataBackend + 'static> Service<DB> {
         let admin_app = Self::setup_admin_endpoint();
         let user_app = Self::setup_user_endpoint();
 
-        let app = Router::new();
-        let app = app.nest("/v1/admin", admin_app).nest("/v1/user", user_app);
+        let api_routes = Router::new()
+            .nest("/v1/admin", admin_app)
+            .nest("/v1/user", user_app);
+        let app = if let Some(prefix) = &endpoint_options.prefix {
+            Router::new().nest(prefix, api_routes)
+        } else {
+            api_routes
+        };
+
         let app = app.layer(cors).with_state(db);
 
         Ok(app)

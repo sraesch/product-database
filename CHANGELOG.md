@@ -9,11 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-
 ### Changed
 
 
 ### Removed
+
+## [0.1.2] - 2025-02-20
+
+### Added
+- Docker image for the UI.
+- A prefix for the REST endpoint can now be defined
 
 ## [0.1.1] - 2025-02-16
 
