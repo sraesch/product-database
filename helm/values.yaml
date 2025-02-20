@@ -4,7 +4,7 @@ image:
   # This sets the pull policy for images.
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "0.1.1"
+  tag: "0.1.2"
 
 # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
@@ -31,6 +31,19 @@ db:
 service:
   # The log level of the REST service. Can be one of: Trace, Debug, Info, Warn, Error
   logLevel: Info
+
+# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  enabled: true
+  className: nginx
+  port: 80  # The port used for the ingress
+  annotations: {}
+  hosts:
+    - host: localhost
+      paths:
+        - path: /api
+          pathType: Prefix
+  tls: []
 
 # The credentials for the database
 credentials:

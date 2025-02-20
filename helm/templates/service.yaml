@@ -16,6 +16,7 @@ data:
     [endpoint]
     address = "0.0.0.0:80"
     allow_origin = "*"
+    prefix = "/api"
 
     [postgres]
     host = "product-db-sql-service"
