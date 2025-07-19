@@ -93,6 +93,7 @@ metadata:
     app.kubernetes.io/version: {{ .Chart.AppVersion }}
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
+  type: {{ if .Values.service.nodePort.enabled }}NodePort{{ else }}{{ .Values.service.type | default "ClusterIP" }}{{ end }}
   selector:
     app.kubernetes.io/name: product-db-rest
     app.kubernetes.io/component: server
@@ -103,3 +104,6 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
+      {{- if .Values.service.nodePort.enabled }}
+      nodePort: {{ .Values.service.nodePort.port }}
+      {{- end }}
